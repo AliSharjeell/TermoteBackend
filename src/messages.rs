@@ -39,7 +39,7 @@ pub enum ClientMessage {
 }
 
 /// Server to client messages.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(tag = "event")]
 pub enum ServerMessage {
     /// Sent when pane state changes (added/removed/resized).
