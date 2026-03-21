@@ -1,0 +1,285 @@
+//! WebSocket message handling for the terminal multiplexer.
+//!
+//! Handles client connections, authentication, and message routing.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::{
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
+    },
+    response::Response,
+    routing::get,
+    Router,
+};
+use futures_util::stream::StreamExt;
+use futures_util::sink::SinkExt;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
+use tracing::{info, error, warn};
+
+use crate::messages::{ClientMessage, ServerMessage};
+use crate::pty_manager::PtyManager;
+use crate::state::AppState;
+
+/// Maximum time to wait for authentication after connection.
+const AUTH_TIMEOUT_SECS: u64 = 5;
+
+/// WebSocket upgrade handler for /ws endpoint.
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+/// Handles a WebSocket connection from a client.
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+    let (mut sender, mut receiver) = socket.split();
+    let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
+
+    // Spawn task to forward messages to WebSocket
+    let sender_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            let json = match serde_json::to_string(&msg) {
+                Ok(j) => j,
+                Err(e) => {
+                    error!("Failed to serialize message: {}", e);
+                    continue;
+                }
+            };
+
+            if sender.send(Message::Text(json)).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Create PTY manager for this session
+    let pty_manager = Arc::new(PtyManager::new());
+    let pty_manager_clone = pty_manager.clone();
+    let tx_clone = tx.clone();
+
+    // Authentication state
+    let mut authenticated = false;
+
+    // Wait for authentication message with timeout
+    let auth_result = timeout(
+        Duration::from_secs(AUTH_TIMEOUT_SECS),
+        receiver.next()
+    ).await;
+
+    match auth_result {
+        Ok(Some(Ok(msg))) => {
+            // Extract text from Message::Text variant
+            let text = match msg {
+                Message::Text(text) => text,
+                Message::Close(_) => {
+                    warn!("Client sent close message during auth");
+                    let _ = tx.send(ServerMessage::AuthResult {
+                        success: false,
+                        message: Some("Unexpected close".to_string()),
+                    }).await;
+                    sender_task.abort();
+                    return;
+                }
+                _ => {
+                    warn!("Received non-text message during auth");
+                    let _ = tx.send(ServerMessage::AuthResult {
+                        success: false,
+                        message: Some("Expected text message".to_string()),
+                    }).await;
+                    sender_task.abort();
+                    return;
+                }
+            };
+
+            match serde_json::from_str::<ClientMessage>(&text) {
+                Ok(ClientMessage::Auth { token }) => {
+                    if state.validate_token(&token).await {
+                        authenticated = true;
+                        info!("Client authenticated successfully");
+                        let _ = tx.send(ServerMessage::AuthResult {
+                            success: true,
+                            message: Some("Authenticated".to_string()),
+                        }).await;
+                    } else {
+                        warn!("Invalid auth token attempted");
+                        let _ = tx.send(ServerMessage::AuthResult {
+                            success: false,
+                            message: Some("Invalid token".to_string()),
+                        }).await;
+                        sender_task.abort();
+                        return;
+                    }
+                }
+                Ok(_) => {
+                    warn!("First message was not auth");
+                    let _ = tx.send(ServerMessage::AuthResult {
+                        success: false,
+                        message: Some("Authentication required first".to_string()),
+                    }).await;
+                    sender_task.abort();
+                    return;
+                }
+                Err(e) => {
+                    error!("Failed to parse auth message: {}", e);
+                    let _ = tx.send(ServerMessage::AuthResult {
+                        success: false,
+                        message: Some("Invalid message format".to_string()),
+                    }).await;
+                    sender_task.abort();
+                    return;
+                }
+            }
+        }
+        Ok(Some(Err(e))) => {
+            error!("WebSocket error during auth: {}", e);
+        }
+        Ok(None) => {
+            warn!("Client disconnected before auth");
+        }
+        Err(_) => {
+            warn!("Auth timeout - no message received within {} seconds", AUTH_TIMEOUT_SECS);
+            let _ = tx.send(ServerMessage::AuthResult {
+                success: false,
+                message: Some("Authentication timeout".to_string()),
+            }).await;
+        }
+    }
+
+    // Only proceed if authenticated
+    if !authenticated {
+        // Close connection after sending result
+        sender_task.abort();
+        return;
+    }
+
+    // Process messages
+    while let Some(msg_result) = receiver.next().await {
+        match msg_result {
+            Ok(msg) => {
+                match msg {
+                    Message::Text(text) => {
+                        match serde_json::from_str::<ClientMessage>(&text) {
+                            Ok(client_msg) => {
+                                if let Err(e) = handle_client_message(
+                                    client_msg,
+                                    &state,
+                                    &pty_manager_clone,
+                                    &tx_clone,
+                                ).await {
+                                    error!("Error handling client message: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to parse client message: {}", e);
+                            }
+                        }
+                    }
+                    Message::Close(_) => {
+                        info!("Client disconnected normally");
+                        break;
+                    }
+                    _ => {
+                        // Ignore other message types
+                    }
+                }
+            }
+            Err(e) => {
+                error!("WebSocket error: {}", e);
+                break;
+            }
+        }
+    }
+
+    // Cleanup
+    info!("Cleaning up WebSocket session");
+    sender_task.abort();
+}
+
+/// Handles a parsed client message.
+async fn handle_client_message(
+    msg: ClientMessage,
+    state: &AppState,
+    pty_manager: &Arc<PtyManager>,
+    tx: &mpsc::Sender<ServerMessage>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match msg {
+        ClientMessage::Spawn { shell } => {
+            info!("Spawn request for shell: {}", shell);
+
+            let (pane_id, pid) = pty_manager.spawn_pty(
+                &shell,
+                80,
+                24,
+                state.clone(),
+                tx.clone(),
+            )?;
+
+            // Update pane with actual PID
+            let mut pane = crate::state::Pane::new(pid, shell, 80, 24);
+            pane.id = pane_id.clone();
+            state.add_pane(pane).await;
+
+            // Broadcast state update
+            let panes = state.get_panes_info().await;
+            tx.send(ServerMessage::StateUpdate { panes }).await?;
+
+            info!("Spawned pane {} with PID {}", pane_id, pid);
+        }
+
+        ClientMessage::Input { pane_id, data } => {
+            info!("Input for pane {}: {:?}", pane_id, data);
+            pty_manager.write_input(&pane_id, &data)?;
+        }
+
+        ClientMessage::Resize { pane_id, cols, rows } => {
+            info!("Resize pane {} to {}x{}", pane_id, cols, rows);
+            state.resize_pane(&pane_id, cols, rows).await;
+            pty_manager.resize_pty(&pane_id, cols, rows)?;
+
+            // Broadcast state update
+            let panes = state.get_panes_info().await;
+            tx.send(ServerMessage::StateUpdate { panes }).await?;
+        }
+
+        ClientMessage::Kill { pane_id } => {
+            info!("Kill request for pane {}", pane_id);
+
+            // Kill the PTY
+            if let Err(e) = pty_manager.kill_pty(&pane_id) {
+                warn!("Error killing PTY: {}", e);
+            }
+
+            // Remove from state
+            state.remove_pane(&pane_id).await;
+
+            // Broadcast state update
+            let panes = state.get_panes_info().await;
+            tx.send(ServerMessage::StateUpdate { panes }).await?;
+        }
+
+        ClientMessage::Auth { .. } => {
+            // Already handled - shouldn't get here
+            warn!("Auth message received after authentication");
+        }
+    }
+
+    Ok(())
+}
+
+/// Creates the router with WebSocket and health endpoints.
+pub fn create_router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/ws", get(ws_handler))
+        .route("/health", get(health_handler))
+        .with_state(state)
+}
+
+/// Health check handler.
+pub async fn health_handler() -> &'static str {
+    "OK"
+}

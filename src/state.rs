@@ -1,0 +1,152 @@
+//! Application state management for the terminal multiplexer.
+//!
+//! Manages panes, authentication state, and WebSocket sessions.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
+use uuid::Uuid;
+
+use crate::messages::PaneInfo;
+
+/// A single terminal pane with its associated PTY and state.
+#[derive(Clone)]
+pub struct Pane {
+    /// Unique identifier for the pane.
+    pub id: String,
+    /// Process ID of the spawned shell.
+    pub pid: u32,
+    /// Shell program name.
+    pub shell: String,
+    /// Number of columns.
+    pub cols: u16,
+    /// Number of rows.
+    pub rows: u16,
+}
+
+impl Pane {
+    /// Creates a new Pane with a generated UUID.
+    pub fn new(pid: u32, shell: String, cols: u16, rows: u16) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            pid,
+            shell,
+            cols,
+            rows,
+        }
+    }
+}
+
+/// Global application state shared across all WebSocket connections.
+#[derive(Clone)]
+pub struct AppState {
+    /// Map of pane ID to Pane struct.
+    pub panes: Arc<RwLock<HashMap<String, Pane>>>,
+    /// Whether a client has authenticated.
+    pub authenticated: Arc<RwLock<bool>>,
+    /// Expected authentication token.
+    pub auth_token: String,
+}
+
+impl AppState {
+    /// Creates a new AppState with the given auth token.
+    pub fn new(auth_token: String) -> Self {
+        Self {
+            panes: Arc::new(RwLock::new(HashMap::new())),
+            authenticated: Arc::new(RwLock::new(false)),
+            auth_token,
+        }
+    }
+
+    /// Adds a new pane to the state.
+    pub async fn add_pane(&self, pane: Pane) {
+        let mut panes = self.panes.write().await;
+        panes.insert(pane.id.clone(), pane);
+    }
+
+    /// Removes a pane from the state.
+    pub async fn remove_pane(&self, pane_id: &str) -> Option<Pane> {
+        let mut panes = self.panes.write().await;
+        panes.remove(pane_id)
+    }
+
+    /// Gets a pane by ID.
+    pub async fn get_pane(&self, pane_id: &str) -> Option<Pane> {
+        let panes = self.panes.read().await;
+        panes.get(pane_id).cloned()
+    }
+
+    /// Gets all panes as PaneInfo structs.
+    pub async fn get_panes_info(&self) -> Vec<PaneInfo> {
+        let panes = self.panes.read().await;
+        panes.values().map(PaneInfo::from).collect()
+    }
+
+    /// Updates pane dimensions.
+    pub async fn resize_pane(&self, pane_id: &str, cols: u16, rows: u16) -> bool {
+        let mut panes = self.panes.write().await;
+        if let Some(pane) = panes.get_mut(pane_id) {
+            pane.cols = cols;
+            pane.rows = rows;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Checks if the given token is valid.
+    pub async fn validate_token(&self, token: &str) -> bool {
+        &self.auth_token == token
+    }
+
+    /// Sets the authenticated flag.
+    pub async fn set_authenticated(&self, value: bool) {
+        let mut auth = self.authenticated.write().await;
+        *auth = value;
+    }
+
+    /// Checks if a client is authenticated.
+    pub async fn is_authenticated(&self) -> bool {
+        let auth = self.authenticated.read().await;
+        *auth
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_app_state_pane_management() {
+        let state = AppState::new("test_token".to_string());
+
+        // Initially empty
+        assert!(state.get_panes_info().await.is_empty());
+
+        // Add a pane
+        let pane = Pane::new(1234, "powershell.exe".to_string(), 80, 24);
+        let pane_id = pane.id.clone();
+        state.add_pane(pane).await;
+
+        // Should have one pane
+        let panes = state.get_panes_info().await;
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].pid, 1234);
+
+        // Remove the pane
+        let removed = state.remove_pane(&pane_id).await;
+        assert!(removed.is_some());
+        assert!(state.get_panes_info().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_authentication() {
+        let state = AppState::new("secret123".to_string());
+
+        assert!(!state.is_authenticated().await);
+        assert!(state.validate_token("wrong").await);
+        assert!(!state.validate_token("wrong").await);
+        assert!(state.validate_token("secret123").await);
+    }
+}
