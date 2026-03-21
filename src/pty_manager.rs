@@ -206,8 +206,9 @@ impl PtyManager {
             // Write to the PTY master
             writer.write_all(data.as_bytes())?;
             writer.flush()?;
-            tracing::debug!("Write input to pane {}: {:?}", pane_id, data);
+            tracing::info!("Writing {} bytes to pane {}", data.len(), pane_id);
         } else {
+            tracing::error!("No writer found for pane {}", pane_id);
             return Err(format!("No writer found for pane {}", pane_id).into());
         }
         Ok(())
