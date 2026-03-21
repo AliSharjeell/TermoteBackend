@@ -57,7 +57,7 @@ async fn main() {
     info!("Tunnel URL: {}", tunnel_url);
 
     // Create application state
-    let state = Arc::new(AppState::new(auth_token, frontend_url, tunnel_url));
+    let state = Arc::new(AppState::new(auth_token.clone(), frontend_url.clone(), tunnel_url.clone()));
 
     // Create router with CORS
     let app = create_router(state)
@@ -75,6 +75,23 @@ async fn main() {
     info!("WebSocket endpoint: ws://{}/ws", addr);
     info!("Health check: http://{}/health", addr);
     info!("Launch (auto-connect): http://{}/launch", addr);
+
+    // Build the launch URL
+    let encoded_tunnel = urlencoding::encode(&tunnel_url);
+    let encoded_token = urlencoding::encode(&auth_token);
+    let launch_url = format!("{}/?tunnel={}&token={}", frontend_url, encoded_tunnel, encoded_token);
+
+    // Open browser after server starts
+    info!("Opening browser at: {}", launch_url);
+    tokio::spawn(async move {
+        // Small delay to ensure server is ready
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        if let Err(e) = open::that(&launch_url) {
+            tracing::warn!("Failed to open browser: {}. You can manually visit: {}", e, launch_url);
+        } else {
+            info!("Browser opened successfully");
+        }
+    });
 
     // Start server
     let listener = tokio::net::TcpListener::bind(addr).await

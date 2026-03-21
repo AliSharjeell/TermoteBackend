@@ -34,6 +34,9 @@ tower-http = { version = "0.5", features = ["cors"] }
 # URL encoding
 urlencoding = "2.1"
 
+# Open URLs in browser
+open = "5.2"
+
 # Futures utilities (for StreamExt)
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
