@@ -110,7 +110,16 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         let panes = state.get_panes_info().await;
                         let active_panes = state.get_active_panes().await;
                         let floating_panes = state.get_floating_panes().await;
-                        let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await;
+                        let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone() }).await;
+
+                        // Replay scrollback buffers for all panes
+                        let all_pane_ids: Vec<String> = active_panes.iter().chain(floating_panes.iter()).cloned().collect();
+                        for (pane_id, buffer) in state.get_panes_buffers(&all_pane_ids).await {
+                            if !buffer.is_empty() {
+                                let text = String::from_utf8_lossy(&buffer).to_string();
+                                let _ = tx.send(ServerMessage::Output { pane_id, data: text }).await;
+                            }
+                        }
                     } else {
                         warn!("Invalid auth token attempted");
                         let _ = tx.send(ServerMessage::AuthResult {

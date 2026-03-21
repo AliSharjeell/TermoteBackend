@@ -152,6 +152,9 @@ impl PtyManager {
                         let text = String::from_utf8_lossy(&data).to_string();
                         tracing::debug!("PTY output ({} bytes) for pane {}", data.len(), pane_id_clone);
 
+                        // Store in scrollback buffer
+                        state_clone.append_pane_buffer(&pane_id_clone, &data).await;
+
                         let msg = crate::messages::ServerMessage::Output {
                             pane_id: pane_id_clone.clone(),
                             data: text,

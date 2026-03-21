@@ -23,6 +23,8 @@ pub struct Pane {
     pub cols: u16,
     /// Number of rows.
     pub rows: u16,
+    /// Scrollback buffer - recent output history
+    pub buffer: Vec<u8>,
 }
 
 impl Pane {
@@ -34,6 +36,18 @@ impl Pane {
             shell,
             cols,
             rows,
+            buffer: Vec::new(),
+        }
+    }
+
+    /// Appends data to the scrollback buffer, capping at MAX_BUFFER_SIZE bytes.
+    pub fn append_buffer(&mut self, data: &[u8]) {
+        const MAX_BUFFER_SIZE: usize = 50_000;
+        self.buffer.extend_from_slice(data);
+        // Cap buffer size
+        if self.buffer.len() > MAX_BUFFER_SIZE {
+            let excess = self.buffer.len() - MAX_BUFFER_SIZE;
+            self.buffer.drain(0..excess);
         }
     }
 }
@@ -113,6 +127,34 @@ impl AppState {
     pub async fn get_floating_panes(&self) -> Vec<String> {
         let floating = self.floating_panes.read().await;
         floating.clone()
+    }
+
+    /// Appends data to a pane's scrollback buffer.
+    pub async fn append_pane_buffer(&self, pane_id: &str, data: &[u8]) {
+        let mut panes = self.panes.write().await;
+        if let Some(pane) = panes.get_mut(pane_id) {
+            pane.append_buffer(data);
+        }
+    }
+
+    /// Gets a pane's scrollback buffer.
+    pub async fn get_pane_buffer(&self, pane_id: &str) -> Vec<u8> {
+        let panes = self.panes.read().await;
+        if let Some(pane) = panes.get(pane_id) {
+            pane.buffer.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Gets scrollback buffers for multiple panes.
+    pub async fn get_panes_buffers(&self, pane_ids: &[String]) -> Vec<(String, Vec<u8>)> {
+        let mut result = Vec::new();
+        for pane_id in pane_ids {
+            let buffer = self.get_pane_buffer(pane_id).await;
+            result.push((pane_id.clone(), buffer));
+        }
+        result
     }
 
     /// Moves a pane to floating tabs.
