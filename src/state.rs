@@ -9,6 +9,7 @@ use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 use crate::messages::PaneInfo;
+use crate::pty_manager::PtyManager;
 
 /// A single terminal pane with its associated PTY and state.
 #[derive(Clone)]
@@ -67,6 +68,8 @@ pub struct AppState {
     pub auth_token: String,
     /// Broadcast channel for terminal output (Radio Tower)
     pub broadcast_tx: Arc<broadcast::Sender<crate::messages::ServerMessage>>,
+    /// Shared PTY manager for all WebSocket connections
+    pub pty_manager: Arc<PtyManager>,
 }
 
 impl AppState {
@@ -80,6 +83,7 @@ impl AppState {
             authenticated: Arc::new(RwLock::new(false)),
             auth_token,
             broadcast_tx: Arc::new(broadcast_tx),
+            pty_manager: Arc::new(PtyManager::new()),
         }
     }
 
