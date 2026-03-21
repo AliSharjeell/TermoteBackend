@@ -1,4 +1,4 @@
-//! Terminal multiplexer backend library.
+//! Termote backend library.
 //!
 //! A web-native terminal multiplexer built with Rust, tokio, and axum.
 //!

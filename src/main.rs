@@ -1,4 +1,4 @@
-//! Terminal multiplexer backend entry point.
+//! Termote backend entry point.
 //!
 //! A web-native terminal multiplexer server that handles WebSocket connections,
 //! PTY spawning, and terminal I/O.
@@ -11,7 +11,7 @@ use tower_http::cors::{CorsLayer, Any};
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use termux_multiplexer::{create_router, AppState};
+use termote::{create_router, AppState};
 
 #[tokio::main]
 async fn main() {
