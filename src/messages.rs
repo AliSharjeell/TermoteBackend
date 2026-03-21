@@ -36,6 +36,10 @@ pub enum ClientMessage {
     /// Move a pane to active grid.
     #[serde(rename = "move_to_active")]
     MoveToActive { pane_id: String },
+
+    /// Rename a pane.
+    #[serde(rename = "rename")]
+    Rename { pane_id: String, name: String },
 }
 
 /// Server to client messages.
@@ -71,6 +75,8 @@ pub struct PaneInfo {
     pub pid: u32,
     /// Shell program name.
     pub shell: String,
+    /// Display name.
+    pub name: String,
     /// Number of columns.
     pub cols: u16,
     /// Number of rows.
@@ -83,6 +89,7 @@ impl From<&Pane> for PaneInfo {
             id: pane.id.clone(),
             pid: pane.pid,
             shell: pane.shell.clone(),
+            name: pane.name.clone(),
             cols: pane.cols,
             rows: pane.rows,
         }
