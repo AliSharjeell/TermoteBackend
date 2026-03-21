@@ -43,7 +43,7 @@ async fn main() {
 
     // Get frontend URL (where the React app is hosted)
     let frontend_url = std::env::var("FRONTEND_URL")
-        .unwrap_or_else(|_| "https://termux-web-frontend.vercel.app".to_string());
+        .unwrap_or_else(|_| "https://termote.vercel.app".to_string());
 
     // Get tunnel URL (public URL of this server for WebSocket connections)
     let tunnel_url = std::env::var("TUNNEL_URL")

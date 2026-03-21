@@ -109,7 +109,7 @@ All messages are JSON with an `event` field:
 |----------|----------|---------|-------------|
 | `AUTH_TOKEN` | No | Auto-generated | Secret token for authentication |
 | `PORT` | No | 9090 | HTTP server port |
-| `FRONTEND_URL` | No | https://termux-web-frontend.vercel.app | URL of the frontend |
+| `FRONTEND_URL` | No | https://termote.vercel.app | URL of the frontend |
 | `TUNNEL_URL` | No | ws://127.0.0.1:9090 | Public WebSocket URL of this server |
 
 ## Setup

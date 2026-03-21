@@ -70,7 +70,7 @@ pub struct AppState {
     pub authenticated: Arc<RwLock<bool>>,
     /// Expected authentication token.
     pub auth_token: String,
-    /// Frontend URL for redirect (e.g., "https://termux-web-frontend.vercel.app")
+    /// Frontend URL for redirect (e.g., "https://termote.vercel.app")
     pub frontend_url: String,
     /// Tunnel URL (public WebSocket URL of this server)
     pub tunnel_url: String,
