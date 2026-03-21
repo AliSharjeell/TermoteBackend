@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 use crate::messages::PaneInfo;
@@ -65,17 +65,21 @@ pub struct AppState {
     pub authenticated: Arc<RwLock<bool>>,
     /// Expected authentication token.
     pub auth_token: String,
+    /// Broadcast channel for terminal output (Radio Tower)
+    pub broadcast_tx: Arc<broadcast::Sender<crate::messages::ServerMessage>>,
 }
 
 impl AppState {
     /// Creates a new AppState with the given auth token.
     pub fn new(auth_token: String) -> Self {
+        let (broadcast_tx, _) = broadcast::channel(100);
         Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
             active_panes: Arc::new(RwLock::new(Vec::new())),
             floating_panes: Arc::new(RwLock::new(Vec::new())),
             authenticated: Arc::new(RwLock::new(false)),
             auth_token,
+            broadcast_tx: Arc::new(broadcast_tx),
         }
     }
 
