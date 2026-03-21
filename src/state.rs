@@ -20,6 +20,8 @@ pub struct Pane {
     pub pid: u32,
     /// Shell program name.
     pub shell: String,
+    /// Display name (editable by user).
+    pub name: String,
     /// Number of columns.
     pub cols: u16,
     /// Number of rows.
@@ -31,10 +33,12 @@ pub struct Pane {
 impl Pane {
     /// Creates a new Pane with a generated UUID.
     pub fn new(pid: u32, shell: String, cols: u16, rows: u16) -> Self {
+        let name = format!("{} ({})", shell, pid);
         Self {
             id: Uuid::new_v4().to_string(),
             pid,
             shell,
+            name,
             cols,
             rows,
             buffer: Vec::new(),
@@ -193,6 +197,17 @@ impl AppState {
         if let Some(pane) = panes.get_mut(pane_id) {
             pane.cols = cols;
             pane.rows = rows;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Renames a pane.
+    pub async fn rename_pane(&self, pane_id: &str, name: &str) -> bool {
+        let mut panes = self.panes.write().await;
+        if let Some(pane) = panes.get_mut(pane_id) {
+            pane.name = name.to_string();
             true
         } else {
             false
