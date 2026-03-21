@@ -226,7 +226,9 @@ async fn handle_client_message(
 
             // Broadcast state update
             let panes = state.get_panes_info().await;
-            tx.send(ServerMessage::StateUpdate { panes }).await?;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
 
             info!("Spawned pane {} with PID {}", pane_id, pid);
         }
@@ -243,7 +245,9 @@ async fn handle_client_message(
 
             // Broadcast state update
             let panes = state.get_panes_info().await;
-            tx.send(ServerMessage::StateUpdate { panes }).await?;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
         }
 
         ClientMessage::Kill { pane_id } => {
@@ -259,7 +263,31 @@ async fn handle_client_message(
 
             // Broadcast state update
             let panes = state.get_panes_info().await;
-            tx.send(ServerMessage::StateUpdate { panes }).await?;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+        }
+
+        ClientMessage::MoveToFloating { pane_id } => {
+            info!("Move to floating: {}", pane_id);
+            state.move_to_floating(&pane_id).await;
+
+            // Broadcast state update
+            let panes = state.get_panes_info().await;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+        }
+
+        ClientMessage::MoveToActive { pane_id } => {
+            info!("Move to active: {}", pane_id);
+            state.move_to_active(&pane_id).await;
+
+            // Broadcast state update
+            let panes = state.get_panes_info().await;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
         }
 
         ClientMessage::Auth { .. } => {

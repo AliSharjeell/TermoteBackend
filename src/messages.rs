@@ -28,6 +28,14 @@ pub enum ClientMessage {
     /// Kill a specific pane.
     #[serde(rename = "kill")]
     Kill { pane_id: String },
+
+    /// Move a pane to floating tabs.
+    #[serde(rename = "move_to_floating")]
+    MoveToFloating { pane_id: String },
+
+    /// Move a pane to active grid.
+    #[serde(rename = "move_to_active")]
+    MoveToActive { pane_id: String },
 }
 
 /// Server to client messages.
@@ -36,7 +44,11 @@ pub enum ClientMessage {
 pub enum ServerMessage {
     /// Sent when pane state changes (added/removed/resized).
     #[serde(rename = "state_update")]
-    StateUpdate { panes: Vec<PaneInfo> },
+    StateUpdate {
+        panes: Vec<PaneInfo>,
+        active_panes: Vec<String>,
+        floating_panes: Vec<String>,
+    },
 
     /// Terminal output data from a pane.
     #[serde(rename = "output")]

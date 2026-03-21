@@ -43,6 +43,10 @@ impl Pane {
 pub struct AppState {
     /// Map of pane ID to Pane struct.
     pub panes: Arc<RwLock<HashMap<String, Pane>>>,
+    /// IDs of panes in the main grid view.
+    pub active_panes: Arc<RwLock<Vec<String>>>,
+    /// IDs of panes extracted to floating tabs.
+    pub floating_panes: Arc<RwLock<Vec<String>>>,
     /// Whether a client has authenticated.
     pub authenticated: Arc<RwLock<bool>>,
     /// Expected authentication token.
@@ -54,21 +58,37 @@ impl AppState {
     pub fn new(auth_token: String) -> Self {
         Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
+            active_panes: Arc::new(RwLock::new(Vec::new())),
+            floating_panes: Arc::new(RwLock::new(Vec::new())),
             authenticated: Arc::new(RwLock::new(false)),
             auth_token,
         }
     }
 
-    /// Adds a new pane to the state.
+    /// Adds a new pane to the state and puts it in active_panes.
     pub async fn add_pane(&self, pane: Pane) {
+        let pane_id = pane.id.clone();
         let mut panes = self.panes.write().await;
-        panes.insert(pane.id.clone(), pane);
+        panes.insert(pane_id.clone(), pane);
+
+        let mut active = self.active_panes.write().await;
+        if !active.contains(&pane_id) {
+            active.push(pane_id);
+        }
     }
 
     /// Removes a pane from the state.
     pub async fn remove_pane(&self, pane_id: &str) -> Option<Pane> {
         let mut panes = self.panes.write().await;
-        panes.remove(pane_id)
+        let result = panes.remove(pane_id);
+
+        // Clean up layout arrays
+        let mut active = self.active_panes.write().await;
+        let mut floating = self.floating_panes.write().await;
+        active.retain(|id| id != pane_id);
+        floating.retain(|id| id != pane_id);
+
+        result
     }
 
     /// Gets a pane by ID.
@@ -81,6 +101,40 @@ impl AppState {
     pub async fn get_panes_info(&self) -> Vec<PaneInfo> {
         let panes = self.panes.read().await;
         panes.values().map(PaneInfo::from).collect()
+    }
+
+    /// Gets active pane IDs.
+    pub async fn get_active_panes(&self) -> Vec<String> {
+        let active = self.active_panes.read().await;
+        active.clone()
+    }
+
+    /// Gets floating pane IDs.
+    pub async fn get_floating_panes(&self) -> Vec<String> {
+        let floating = self.floating_panes.read().await;
+        floating.clone()
+    }
+
+    /// Moves a pane to floating tabs.
+    pub async fn move_to_floating(&self, pane_id: &str) {
+        let mut active = self.active_panes.write().await;
+        let mut floating = self.floating_panes.write().await;
+
+        active.retain(|id| id != pane_id);
+        if !floating.contains(&pane_id.to_string()) {
+            floating.push(pane_id.to_string());
+        }
+    }
+
+    /// Moves a pane to active grid.
+    pub async fn move_to_active(&self, pane_id: &str) {
+        let mut active = self.active_panes.write().await;
+        let mut floating = self.floating_panes.write().await;
+
+        floating.retain(|id| id != pane_id);
+        if !active.contains(&pane_id.to_string()) {
+            active.push(pane_id.to_string());
+        }
     }
 
     /// Updates pane dimensions.

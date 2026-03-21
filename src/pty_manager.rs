@@ -183,7 +183,9 @@ impl PtyManager {
             // Notify that pane was killed
             let _ = state_clone.remove_pane(&pane_id_clone).await;
             let panes = state_clone.get_panes_info().await;
-            let _ = output_tx.send(crate::messages::ServerMessage::StateUpdate { panes }).await;
+            let active_panes = state_clone.get_active_panes().await;
+            let floating_panes = state_clone.get_floating_panes().await;
+            let _ = output_tx.send(crate::messages::ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await;
         });
 
         // Return (pane_id, pid) - the caller should add the pane to state with correct ID
