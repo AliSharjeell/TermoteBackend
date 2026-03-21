@@ -47,7 +47,7 @@ impl Pane {
 
     /// Appends data to the scrollback buffer, capping at MAX_BUFFER_SIZE bytes.
     pub fn append_buffer(&mut self, data: &[u8]) {
-        const MAX_BUFFER_SIZE: usize = 50_000;
+        const MAX_BUFFER_SIZE: usize = 1_000_000;
         self.buffer.extend_from_slice(data);
         // Cap buffer size
         if self.buffer.len() > MAX_BUFFER_SIZE {
