@@ -40,6 +40,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
 
+    // Subscribe to broadcast channel (Radio Tower)
+    let mut broadcast_rx = state.broadcast_tx.subscribe();
+
     // Spawn task to forward messages to WebSocket
     let sender_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -61,6 +64,16 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let pty_manager = Arc::new(PtyManager::new());
     let pty_manager_clone = pty_manager.clone();
     let tx_clone = tx.clone();
+    let tx_for_broadcast = tx.clone();
+
+    // Spawn task to forward broadcast messages to this client's channel
+    let broadcast_task = tokio::spawn(async move {
+        while let Ok(msg) = broadcast_rx.recv().await {
+            if tx_for_broadcast.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
 
     // Authentication state
     let mut authenticated = false;
@@ -83,6 +96,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         message: Some("Unexpected close".to_string()),
                     }).await;
                     sender_task.abort();
+                    broadcast_task.abort();
                     return;
                 }
                 _ => {
@@ -92,6 +106,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         message: Some("Expected text message".to_string()),
                     }).await;
                     sender_task.abort();
+                    broadcast_task.abort();
                     return;
                 }
             };
@@ -106,13 +121,13 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                             message: Some("Authenticated".to_string()),
                         }).await;
 
-                        // Immediately send current state to newly authenticated client
+                        // Send current state to newly authenticated client (via their own channel)
                         let panes = state.get_panes_info().await;
                         let active_panes = state.get_active_panes().await;
                         let floating_panes = state.get_floating_panes().await;
                         let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone() }).await;
 
-                        // Replay scrollback buffers for all panes
+                        // Replay scrollback buffers for all panes to this client
                         let all_pane_ids: Vec<String> = active_panes.iter().chain(floating_panes.iter()).cloned().collect();
                         for (pane_id, buffer) in state.get_panes_buffers(&all_pane_ids).await {
                             if !buffer.is_empty() {
@@ -127,6 +142,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                             message: Some("Invalid token".to_string()),
                         }).await;
                         sender_task.abort();
+                        broadcast_task.abort();
                         return;
                     }
                 }
@@ -137,6 +153,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         message: Some("Authentication required first".to_string()),
                     }).await;
                     sender_task.abort();
+                    broadcast_task.abort();
                     return;
                 }
                 Err(e) => {
@@ -213,6 +230,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Cleanup
     info!("Cleaning up WebSocket session");
     sender_task.abort();
+    broadcast_task.abort();
 }
 
 /// Handles a parsed client message.
@@ -220,7 +238,7 @@ async fn handle_client_message(
     msg: ClientMessage,
     state: &AppState,
     pty_manager: &Arc<PtyManager>,
-    tx: &mpsc::Sender<ServerMessage>,
+    _tx: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match msg {
         ClientMessage::Spawn { shell } => {
@@ -231,7 +249,7 @@ async fn handle_client_message(
                 80,
                 24,
                 state.clone(),
-                tx.clone(),
+                &state.broadcast_tx,
             )?;
 
             // Update pane with actual PID
@@ -239,11 +257,11 @@ async fn handle_client_message(
             pane.id = pane_id.clone();
             state.add_pane(pane).await;
 
-            // Broadcast state update
+            // Broadcast state update to all clients
             let panes = state.get_panes_info().await;
             let active_panes = state.get_active_panes().await;
             let floating_panes = state.get_floating_panes().await;
-            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
 
             info!("Spawned pane {} with PID {}", pane_id, pid);
         }
@@ -258,11 +276,11 @@ async fn handle_client_message(
             state.resize_pane(&pane_id, cols, rows).await;
             pty_manager.resize_pty(&pane_id, cols, rows)?;
 
-            // Broadcast state update
+            // Broadcast state update to all clients
             let panes = state.get_panes_info().await;
             let active_panes = state.get_active_panes().await;
             let floating_panes = state.get_floating_panes().await;
-            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         }
 
         ClientMessage::Kill { pane_id } => {
@@ -276,33 +294,33 @@ async fn handle_client_message(
             // Remove from state
             state.remove_pane(&pane_id).await;
 
-            // Broadcast state update
+            // Broadcast state update to all clients
             let panes = state.get_panes_info().await;
             let active_panes = state.get_active_panes().await;
             let floating_panes = state.get_floating_panes().await;
-            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         }
 
         ClientMessage::MoveToFloating { pane_id } => {
             info!("Move to floating: {}", pane_id);
             state.move_to_floating(&pane_id).await;
 
-            // Broadcast state update
+            // Broadcast state update to all clients
             let panes = state.get_panes_info().await;
             let active_panes = state.get_active_panes().await;
             let floating_panes = state.get_floating_panes().await;
-            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         }
 
         ClientMessage::MoveToActive { pane_id } => {
             info!("Move to active: {}", pane_id);
             state.move_to_active(&pane_id).await;
 
-            // Broadcast state update
+            // Broadcast state update to all clients
             let panes = state.get_panes_info().await;
             let active_panes = state.get_active_panes().await;
             let floating_panes = state.get_floating_panes().await;
-            tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await?;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         }
 
         ClientMessage::Auth { .. } => {
