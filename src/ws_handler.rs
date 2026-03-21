@@ -105,6 +105,12 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                             success: true,
                             message: Some("Authenticated".to_string()),
                         }).await;
+
+                        // Immediately send current state to newly authenticated client
+                        let panes = state.get_panes_info().await;
+                        let active_panes = state.get_active_panes().await;
+                        let floating_panes = state.get_floating_panes().await;
+                        let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await;
                     } else {
                         warn!("Invalid auth token attempted");
                         let _ = tx.send(ServerMessage::AuthResult {
