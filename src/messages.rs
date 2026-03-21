@@ -45,6 +45,10 @@ pub enum ClientMessage {
     /// Rename a pane.
     #[serde(rename = "rename")]
     Rename { pane_id: String, name: String },
+
+    /// Ping/pong heartbeat (no-op, just keeps connection alive).
+    #[serde(rename = "ping")]
+    Ping,
 }
 
 /// Server to client messages.

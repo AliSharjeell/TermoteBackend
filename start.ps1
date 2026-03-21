@@ -3,8 +3,6 @@
 
 # Generate a random 6-character alphanumeric token
 $env:AUTH_TOKEN = -join ((97..122) + (48..57) | Get-Random -Count 6 | ForEach-Object {[char]$_})
-$env:AUTH_TOKEN | Out-File -FilePath ".env"
-
 $token = $env:AUTH_TOKEN
 Write-Host "Auth Token: $token" -ForegroundColor Green
 Write-Host "Starting Rust backend..."
@@ -17,33 +15,56 @@ if (-not $cloudflaredPath) {
     exit 1
 }
 
-# Start cloudflared tunnel
+# Temp log file
+$tunnelLog = "$env:TEMP\termote_tunnel.log"
+
+# 1. Kill any dangling backend processes holding port 9090
+Write-Host "Cleaning up any stale processes..."
+Stop-Process -Name "termote" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
+
 Write-Host "Starting Cloudflare Tunnel..."
-$cloudflared = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:9090" -NoNewWindow -PassThru -RedirectStandardOutput "tunnel.log"
 
-Start-Sleep 5
+# 2. Start cloudflared and capture stderr (where the URL is printed)
+$process = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:9090" -NoNewWindow -PassThru -RedirectStandardError $tunnelLog
 
-# Parse the tunnel URL from the log
+# 3. Wait up to 15 seconds for the tunnel to initialize and write the URL
+Write-Host "Waiting for tunnel URL..." -ForegroundColor Yellow
 $cloudflareUrl = ""
-try {
-    $logContent = Get-Content "tunnel.log" -Raw
-    if ($logContent -match 'try routing through our network.*"(https://[^"]+)"') {
-        $cloudflareUrl = $Matches[1]
-    } elseif ($logContent -match 'Your quick Tunnel has been created!.*?(https://[^"\s]+)') {
-        $cloudflareUrl = $Matches[1]
+$startTime = Get-Date
+while (((Get-Date) - $startTime).TotalSeconds -lt 15) {
+    if (Test-Path $tunnelLog) {
+        $content = Get-Content $tunnelLog -ErrorAction SilentlyContinue
+        foreach ($line in $content) {
+            if ($line -match '(https://[a-zA-Z0-9_-]+\.trycloudflare\.com)') {
+                $cloudflareUrl = $Matches[1]
+                break
+            }
+        }
     }
-} catch {
-    Write-Host "Warning: Could not parse tunnel URL from log" -ForegroundColor Yellow
+    if ($cloudflareUrl) { break }
+    Start-Sleep -Seconds 1
 }
 
 if ($cloudflareUrl) {
     Write-Host "Cloudflare Tunnel URL: $cloudflareUrl" -ForegroundColor Cyan
-    Write-Host "WebSocket endpoint: $cloudflareUrl/ws" -ForegroundColor Cyan
+    $wsUrl = $cloudflareUrl -replace '^https://', 'wss://'
+    $env:TUNNEL_URL = $wsUrl
+    Write-Host "WebSocket endpoint: $wsUrl/ws" -ForegroundColor Cyan
 } else {
     Write-Host "Warning: Could not determine tunnel URL" -ForegroundColor Yellow
-    Get-Content "tunnel.log" | Select-Object -First 10
+    if (Test-Path $tunnelLog) {
+        Write-Host "Log contents:" -ForegroundColor Yellow
+        Get-Content $tunnelLog
+    }
 }
 
 # Run Rust server
 Set-Location $PSScriptRoot
 cargo run --release
+
+# Cleanup
+if ($process -and -not $process.HasExited) {
+    Stop-Process $process.Id -Force -ErrorAction SilentlyContinue
+}
+Remove-Item $tunnelLog -ErrorAction SilentlyContinue

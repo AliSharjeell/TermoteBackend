@@ -990,7 +990,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "termux_multiplexer"
+name = "termote"
 version = "0.1.0"
 dependencies = [
  "axum",

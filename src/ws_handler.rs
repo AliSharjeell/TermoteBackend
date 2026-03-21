@@ -364,6 +364,11 @@ async fn handle_client_message(
             // Already handled - shouldn't get here
             warn!("Auth message received after authentication");
         }
+
+        ClientMessage::Ping => {
+            // No-op: heartbeat to keep connection alive
+            tracing::debug!("Received ping from client");
+        }
     }
 
     Ok(())
