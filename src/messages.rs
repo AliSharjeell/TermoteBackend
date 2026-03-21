@@ -25,6 +25,11 @@ pub enum ClientMessage {
     #[serde(rename = "resize")]
     Resize { pane_id: String, cols: u16, rows: u16 },
 
+    /// Force refocus - ignores circuit breaker, broadcasts to all clients.
+    /// Used when switching devices to make this client's size take priority.
+    #[serde(rename = "refocus")]
+    Refocus { pane_id: String, cols: u16, rows: u16 },
+
     /// Kill a specific pane.
     #[serde(rename = "kill")]
     Kill { pane_id: String },

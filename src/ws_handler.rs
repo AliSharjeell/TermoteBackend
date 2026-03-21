@@ -345,6 +345,21 @@ async fn handle_client_message(
             let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         }
 
+        ClientMessage::Refocus { pane_id, cols, rows } => {
+            // Force resize without circuit breaker - this client takes priority
+            info!("Refocus pane {} to {}x{} (forced)", pane_id, cols, rows);
+            state.resize_pane(&pane_id, cols, rows).await;
+            if let Err(e) = state.pty_manager.resize_pty(&pane_id, cols, rows) {
+                error!("Failed to resize pane {}: {}", pane_id, e);
+            }
+
+            // Broadcast to ALL clients (including sender) so everyone updates
+            let panes = state.get_panes_info().await;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+        }
+
         ClientMessage::Auth { .. } => {
             // Already handled - shouldn't get here
             warn!("Auth message received after authentication");
