@@ -21,7 +21,7 @@ use tokio::time::timeout;
 use tracing::{info, error, warn};
 
 use crate::messages::{ClientMessage, ServerMessage};
-use crate::pty_manager::PtyManager;
+
 use crate::state::AppState;
 
 /// Maximum time to wait for authentication after connection.
@@ -60,9 +60,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
-    // Create PTY manager for this session
-    let pty_manager = Arc::new(PtyManager::new());
-    let pty_manager_clone = pty_manager.clone();
+    // Use shared PTY manager from state (survives across reconnections)
     let tx_clone = tx.clone();
     let tx_for_broadcast = tx.clone();
 
@@ -200,7 +198,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                 if let Err(e) = handle_client_message(
                                     client_msg,
                                     &state,
-                                    &pty_manager_clone,
                                     &tx_clone,
                                 ).await {
                                     error!("Error handling client message: {}", e);
@@ -237,14 +234,13 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 async fn handle_client_message(
     msg: ClientMessage,
     state: &AppState,
-    pty_manager: &Arc<PtyManager>,
     _tx: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match msg {
         ClientMessage::Spawn { shell } => {
             info!("Spawn request for shell: {}", shell);
 
-            let (pane_id, pid) = pty_manager.spawn_pty(
+            let (pane_id, pid) = state.pty_manager.spawn_pty(
                 &shell,
                 80,
                 24,
@@ -267,14 +263,18 @@ async fn handle_client_message(
         }
 
         ClientMessage::Input { pane_id, data } => {
-            info!("Input for pane {}: {:?}", pane_id, data);
-            pty_manager.write_input(&pane_id, &data)?;
+            info!("Backend received input for pane: {}", pane_id);
+            if let Err(e) = state.pty_manager.write_input(&pane_id, &data) {
+                error!("Failed to write input to pane {}: {}", pane_id, e);
+            }
         }
 
         ClientMessage::Resize { pane_id, cols, rows } => {
             info!("Resize pane {} to {}x{}", pane_id, cols, rows);
             state.resize_pane(&pane_id, cols, rows).await;
-            pty_manager.resize_pty(&pane_id, cols, rows)?;
+            if let Err(e) = state.pty_manager.resize_pty(&pane_id, cols, rows) {
+                error!("Failed to resize pane {}: {}", pane_id, e);
+            }
 
             // Broadcast state update to all clients
             let panes = state.get_panes_info().await;
@@ -287,7 +287,7 @@ async fn handle_client_message(
             info!("Kill request for pane {}", pane_id);
 
             // Kill the PTY
-            if let Err(e) = pty_manager.kill_pty(&pane_id) {
+            if let Err(e) = state.pty_manager.kill_pty(&pane_id) {
                 warn!("Error killing PTY: {}", e);
             }
 
