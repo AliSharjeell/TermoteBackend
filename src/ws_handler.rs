@@ -323,6 +323,17 @@ async fn handle_client_message(
             let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         }
 
+        ClientMessage::Rename { pane_id, name } => {
+            info!("Rename pane {} to {}", pane_id, name);
+            state.rename_pane(&pane_id, &name).await;
+
+            // Broadcast state update to all clients
+            let panes = state.get_panes_info().await;
+            let active_panes = state.get_active_panes().await;
+            let floating_panes = state.get_floating_panes().await;
+            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+        }
+
         ClientMessage::Auth { .. } => {
             // Already handled - shouldn't get here
             warn!("Auth message received after authentication");
