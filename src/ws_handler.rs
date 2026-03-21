@@ -270,17 +270,28 @@ async fn handle_client_message(
         }
 
         ClientMessage::Resize { pane_id, cols, rows } => {
-            info!("Resize pane {} to {}x{}", pane_id, cols, rows);
-            state.resize_pane(&pane_id, cols, rows).await;
-            if let Err(e) = state.pty_manager.resize_pty(&pane_id, cols, rows) {
-                error!("Failed to resize pane {}: {}", pane_id, e);
-            }
+            // Circuit breaker: only resize if dimensions actually changed
+            let should_resize = if let Some(current_pane) = state.get_pane(&pane_id).await {
+                current_pane.cols != cols || current_pane.rows != rows
+            } else {
+                true
+            };
 
-            // Broadcast state update to all clients
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            if !should_resize {
+                info!("Resize skipped for pane {} (same dimensions {}x{})", pane_id, cols, rows);
+            } else {
+                info!("Resize pane {} to {}x{}", pane_id, cols, rows);
+                state.resize_pane(&pane_id, cols, rows).await;
+                if let Err(e) = state.pty_manager.resize_pty(&pane_id, cols, rows) {
+                    error!("Failed to resize pane {}: {}", pane_id, e);
+                }
+
+                // Broadcast state update to all clients
+                let panes = state.get_panes_info().await;
+                let active_panes = state.get_active_panes().await;
+                let floating_panes = state.get_floating_panes().await;
+                let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            }
         }
 
         ClientMessage::Kill { pane_id } => {
