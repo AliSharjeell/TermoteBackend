@@ -70,6 +70,10 @@ pub struct AppState {
     pub authenticated: Arc<RwLock<bool>>,
     /// Expected authentication token.
     pub auth_token: String,
+    /// Frontend URL for redirect (e.g., "https://termux-web-frontend.vercel.app")
+    pub frontend_url: String,
+    /// Tunnel URL (public WebSocket URL of this server)
+    pub tunnel_url: String,
     /// Broadcast channel for terminal output (Radio Tower)
     pub broadcast_tx: Arc<broadcast::Sender<crate::messages::ServerMessage>>,
     /// Shared PTY manager for all WebSocket connections
@@ -78,7 +82,7 @@ pub struct AppState {
 
 impl AppState {
     /// Creates a new AppState with the given auth token.
-    pub fn new(auth_token: String) -> Self {
+    pub fn new(auth_token: String, frontend_url: String, tunnel_url: String) -> Self {
         let (broadcast_tx, _) = broadcast::channel(100);
         Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
@@ -86,6 +90,8 @@ impl AppState {
             floating_panes: Arc::new(RwLock::new(Vec::new())),
             authenticated: Arc::new(RwLock::new(false)),
             auth_token,
+            frontend_url,
+            tunnel_url,
             broadcast_tx: Arc::new(broadcast_tx),
             pty_manager: Arc::new(PtyManager::new()),
         }

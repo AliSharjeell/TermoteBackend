@@ -38,8 +38,26 @@ async fn main() {
 
     info!("Auth token configured");
 
+    // Configure listen address
+    let port = std::env::var("PORT").map(|p| p.parse().unwrap_or(9090)).unwrap_or(9090);
+
+    // Get frontend URL (where the React app is hosted)
+    let frontend_url = std::env::var("FRONTEND_URL")
+        .unwrap_or_else(|_| "https://termux-web-frontend.vercel.app".to_string());
+
+    // Get tunnel URL (public URL of this server for WebSocket connections)
+    let tunnel_url = std::env::var("TUNNEL_URL")
+        .unwrap_or_else(|_| {
+            // Default to localhost - user should configure this for production
+            info!("TUNNEL_URL not set, defaulting to localhost (configure for production!)");
+            format!("ws://127.0.0.1:{}", port)
+        });
+
+    info!("Frontend URL: {}", frontend_url);
+    info!("Tunnel URL: {}", tunnel_url);
+
     // Create application state
-    let state = Arc::new(AppState::new(auth_token));
+    let state = Arc::new(AppState::new(auth_token, frontend_url, tunnel_url));
 
     // Create router with CORS
     let app = create_router(state)
@@ -51,12 +69,12 @@ async fn main() {
         );
 
     // Configure listen address
-    let port = std::env::var("PORT").map(|p| p.parse().unwrap_or(9090)).unwrap_or(9090);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     info!("Listening on {}", addr);
     info!("WebSocket endpoint: ws://{}/ws", addr);
     info!("Health check: http://{}/health", addr);
+    info!("Launch (auto-connect): http://{}/launch", addr);
 
     // Start server
     let listener = tokio::net::TcpListener::bind(addr).await

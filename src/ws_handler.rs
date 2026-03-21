@@ -10,7 +10,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
-    response::Response,
+    response::{IntoResponse, Response, Redirect},
     routing::get,
     Router,
 };
@@ -359,10 +359,29 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", get(ws_handler))
         .route("/health", get(health_handler))
+        .route("/launch", get(launch_handler))
         .with_state(state)
 }
 
 /// Health check handler.
 pub async fn health_handler() -> &'static str {
     "OK"
+}
+
+/// Launch handler - redirects to frontend with credentials for auto-login.
+/// This mimics the "Connect to Mobile" QR code functionality.
+pub async fn launch_handler(State(state): State<Arc<AppState>>) -> Response {
+    let frontend_url = &state.frontend_url;
+    let tunnel_url = &state.tunnel_url;
+    let token = &state.auth_token;
+
+    // URL-encode the tunnel URL and token
+    let encoded_tunnel = urlencoding::encode(tunnel_url);
+    let encoded_token = urlencoding::encode(token);
+
+    let redirect_url = format!("{}/?tunnel={}&token={}", frontend_url, encoded_tunnel, encoded_token);
+
+    info!("Launch redirect to: {}", redirect_url);
+
+    Redirect::to(&redirect_url).into_response()
 }

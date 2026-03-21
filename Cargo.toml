@@ -31,6 +31,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # HTTP utilities (CORS)
 tower-http = { version = "0.5", features = ["cors"] }
 
+# URL encoding
+urlencoding = "2.1"
+
 # Futures utilities (for StreamExt)
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
