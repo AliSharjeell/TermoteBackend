@@ -51,7 +51,8 @@ async fn main() {
         );
 
     // Configure listen address
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let port = std::env::var("PORT").map(|p| p.parse().unwrap_or(9090)).unwrap_or(9090);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     info!("Listening on {}", addr);
     info!("WebSocket endpoint: ws://{}/ws", addr);

@@ -21,7 +21,7 @@ fi
 
 # Start cloudflared tunnel
 echo "Starting Cloudflare Tunnel..."
-cloudflared tunnel --url http://localhost:8080 > tunnel.log 2>&1 &
+cloudflared tunnel --url http://localhost:9090 > tunnel.log 2>&1 &
 CLOUDFLARED_PID=$!
 
 sleep 5

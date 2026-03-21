@@ -19,7 +19,7 @@ if (-not $cloudflaredPath) {
 
 # Start cloudflared tunnel
 Write-Host "Starting Cloudflare Tunnel..."
-$cloudflared = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:8080" -NoNewWindow -PassThru -RedirectStandardOutput "tunnel.log"
+$cloudflared = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:9090" -NoNewWindow -PassThru -RedirectStandardOutput "tunnel.log"
 
 Start-Sleep 5
 
