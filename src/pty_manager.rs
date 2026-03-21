@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize, Child, MasterPty};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, broadcast};
 use tracing::{info, error, warn};
 
 use crate::state::AppState;
@@ -48,7 +48,7 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         state: AppState,
-        output_tx: mpsc::Sender<crate::messages::ServerMessage>,
+        broadcast_tx: &broadcast::Sender<crate::messages::ServerMessage>,
     ) -> Result<(String, u32), Box<dyn std::error::Error + Send + Sync>> {
         let pty_system = native_pty_system();
 
@@ -81,7 +81,7 @@ impl PtyManager {
 
         // Clone references for the async task
         let pane_id_clone = pane_id.clone();
-        let output_tx_clone = output_tx.clone();
+        let broadcast_tx_clone = broadcast_tx.clone(); // Now this is correct since broadcast_tx is &Sender and .clone() gives Sender
         let instances_clone = self.instances.clone();
         let master_writer_clone = self.master_writer.clone();
         let master_pty_clone = self.master_pty.clone();
@@ -160,9 +160,8 @@ impl PtyManager {
                             data: text,
                         };
 
-                        if output_tx_clone.send(msg).await.is_err() {
-                            warn!("Failed to send PTY output - channel closed");
-                            break;
+                        if broadcast_tx_clone.send(msg).is_err() {
+                            warn!("No active receivers for broadcast");
                         }
                     }
                     Err(e) => {
@@ -183,12 +182,12 @@ impl PtyManager {
                 master_map.remove(&pane_id_clone);
             }
 
-            // Notify that pane was killed
+            // Notify that pane was killed (via broadcast so all clients see it)
             let _ = state_clone.remove_pane(&pane_id_clone).await;
             let panes = state_clone.get_panes_info().await;
             let active_panes = state_clone.get_active_panes().await;
             let floating_panes = state_clone.get_floating_panes().await;
-            let _ = output_tx.send(crate::messages::ServerMessage::StateUpdate { panes, active_panes, floating_panes }).await;
+            let _ = broadcast_tx_clone.send(crate::messages::ServerMessage::StateUpdate { panes, active_panes, floating_panes });
         });
 
         // Return (pane_id, pid) - the caller should add the pane to state with correct ID
