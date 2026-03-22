@@ -1,5 +1,4 @@
 # Terminal Multiplexer Start Script
-. $PROFILE
 # Generates auth token, starts cloudflared tunnel, and runs the backend
 
 # Generate a random 6-character alphanumeric token
@@ -8,10 +7,10 @@ $token = $env:AUTH_TOKEN
 Write-Host "Auth Token: $token" -ForegroundColor Green
 Write-Host "Starting Rust backend..."
 
-# Check if cloudflared is installed
-$cloudflaredPath = Get-Command cloudflared -ErrorAction SilentlyContinue
-if (-not $cloudflaredPath) {
-    Write-Host "cloudflared not found. Please install cloudflared first." -ForegroundColor Red
+# Check if cloudflared.exe exists in backend folder
+$cloudflaredExe = "$PSScriptRoot\backend\cloudflared.exe"
+if (-not (Test-Path $cloudflaredExe)) {
+    Write-Host "cloudflared not found at $cloudflaredExe" -ForegroundColor Red
     Write-Host "Download from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/install-and-setup/tunnel-guide/local/" -ForegroundColor Yellow
     exit 1
 }
@@ -27,7 +26,7 @@ Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
 Write-Host "Starting Cloudflare Tunnel..."
 
 # 2. Start cloudflared and capture stderr (where the URL is printed)
-$process = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:9090" -NoNewWindow -PassThru -RedirectStandardError $tunnelLog
+$process = Start-Process -FilePath $cloudflaredExe -ArgumentList "tunnel", "--url", "http://localhost:9090" -NoNewWindow -PassThru -RedirectStandardError $tunnelLog
 
 # 3. Wait up to 15 seconds for the tunnel to initialize and write the URL
 Write-Host "Waiting for tunnel URL..." -ForegroundColor Yellow
@@ -62,9 +61,9 @@ if ($cloudflareUrl) {
     }
 }
 
-# Run Rust server
+# Run compiled Rust server
 Set-Location $PSScriptRoot
-cargo run --release
+& "$PSScriptRoot\target\release\termote.exe"
 
 # Cleanup
 if ($process -and -not $process.HasExited) {
