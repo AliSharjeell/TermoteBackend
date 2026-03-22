@@ -81,18 +81,21 @@ $profilePath = if ($PROFILE) { $PROFILE } else { "$env:USERPROFILE\Documents\Win
 if (-not (Test-Path (Split-Path $profilePath))) { New-Item -Type Directory -Force (Split-Path $profilePath) | Out-Null }
 if (-not (Test-Path $profilePath)) { New-Item -Type File -Force $profilePath | Out-Null }
 
-$aliasLines = @(
-    ""
-    "function termote {"
-    "    `$env:PATH += `";$backendDir`""
-    "    Set-Location `"$backendDir`""
-    "    .\start.ps1"
-    "}"
-)
+# The safest, most parser-proof way to build the function block
+$line1 = "function termote {"
+$line2 = "    `$env:PATH += `";$backendDir`""
+$line3 = "    Set-Location `"$backendDir`""
+$line4 = "    .\start.ps1"
+$line5 = "}"
 
 $existingProfile = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
 if ($null -eq $existingProfile -or $existingProfile -notmatch "function termote") {
-    $aliasLines | Add-Content -Path $profilePath
+    Add-Content -Path $profilePath -Value ""
+    Add-Content -Path $profilePath -Value $line1
+    Add-Content -Path $profilePath -Value $line2
+    Add-Content -Path $profilePath -Value $line3
+    Add-Content -Path $profilePath -Value $line4
+    Add-Content -Path $profilePath -Value $line5
 }
 
 Write-Host "  Added 'termote' function to your PowerShell profile." -ForegroundColor Green
