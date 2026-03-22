@@ -161,6 +161,10 @@ $termotePs1Lines = @(
     "                `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }"
     "                `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }"
     '                if ($tunnelUrl -and $token -and $tunnelUrl -notmatch ''127\.0\.0\.1'') {'
+    '                    # First open raw tunnel URL to clear Cloudflare challenge, then open app'
+    '                    $httpsUrl = $tunnelUrl -replace ''^wss://'', ''https://'' -replace ''/ws$'', ''''
+    '                    Start-Process $httpsUrl'
+    '                    Start-Sleep -Seconds 2'
     '                    $launchUrl = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($tunnelUrl))&token=$([Uri]::EscapeDataString($token))"'
     '                    Start-Process $launchUrl'
     '                }'
