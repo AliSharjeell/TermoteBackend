@@ -242,19 +242,12 @@ $termoteFileHandler = "$shimDir\termote-file.ps1"
 $handlerLines = @(
     '$rawPath = $args[0]'
     'if (-not $rawPath) { $rawPath = (Get-Location).Path }'
+    '# If it is a file, get the parent directory. If it is a directory, use it directly.'
     '$dir = if (Test-Path $rawPath -PathType Leaf) { Split-Path -Parent $rawPath } else { $rawPath }'
-    '$dir = $dir -replace '^"|"$', ''''''
-    '# Send open_dir IPC directly — no new window spawned'
-    '$client = New-Object System.Net.Sockets.TcpClient'
-    '$client.Connect("127.0.0.1", 9091)'
-    '$stream = $client.GetStream()'
-    '$writer = New-Object System.IO.StreamWriter($stream)'
-    '$writer.WriteLine("open_dir:$dir")'
-    '$writer.Flush()'
-    '$stream.Close()'
-    '$client.Close()'
+    '# Strip quotes just in case'
+    '$dir = $dir -replace ''^"|"$'', '''''
+    'Start-Process powershell -ArgumentList "-NoExit","-WindowStyle","Hidden","-Command","Set-Location -LiteralPath `"$dir`"; termote" '
 )
-
 Set-Content -Path $termoteFileHandler -Value $handlerLines -Encoding UTF8
 
 # Folder background (right-click in empty space)
