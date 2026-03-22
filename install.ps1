@@ -22,21 +22,21 @@ $shimDir = "$env:USERPROFILE\.termote-bin"
 
 # 1. Clone or update the repo
 if (-not (Test-Path $installDir)) {
-    Write-Host "[1/7] Cloning Termote repository..." -ForegroundColor Yellow
+    Write-Host "[1/8] Cloning Termote repository..." -ForegroundColor Yellow
     git clone --depth 1 $RepoUrl $installDir
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Failed to clone repository. Is Git installed?" -ForegroundColor Red
         exit 1
     }
 } else {
-    Write-Host "[1/7] Updating existing Termote installation..." -ForegroundColor Yellow
+    Write-Host "[1/8] Updating existing Termote installation..." -ForegroundColor Yellow
     Set-Location $installDir
     git pull origin $Branch
 }
 
 # 2. Install Rust if not present
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-    Write-Host "[2/7] Installing Rust (first-time only, ~2 min)..." -ForegroundColor Yellow
+    Write-Host "[2/8] Installing Rust (first-time only, ~2 min)..." -ForegroundColor Yellow
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -Uri "https://win.rustup.rs" -OutFile "$env:TEMP\rustup-init.exe"
     & "$env:TEMP\rustup-init.exe" -y -q --default-toolchain stable
@@ -45,18 +45,18 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User") + ";" + [System.Environment]::GetEnvironmentVariable("Path","Machine")
     Write-Host "  Rust installed successfully!" -ForegroundColor Green
 } else {
-    Write-Host "[2/7] Rust already installed, skipping..." -ForegroundColor Gray
+    Write-Host "[2/8] Rust already installed, skipping..." -ForegroundColor Gray
 }
 
 # 3. Install Microsoft Dev Tunnels CLI
 $devtunnelInstalled = $false
 if (Get-Command devtunnel -ErrorAction SilentlyContinue) {
     $devtunnelInstalled = $true
-    Write-Host "[3/7] Microsoft Dev Tunnels already installed, skipping..." -ForegroundColor Gray
+    Write-Host "[3/8] Microsoft Dev Tunnels already installed, skipping..." -ForegroundColor Gray
 }
 
 if (-not $devtunnelInstalled) {
-    Write-Host "[3/7] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
+    Write-Host "[3/8] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
 
     $termoteBinDir = "$installDir\bin"
     $devtunnelPath = "$termoteBinDir\devtunnel.exe"
@@ -74,15 +74,21 @@ if (-not $devtunnelInstalled) {
         }
         $devtunnelInstalled = $true
         Write-Host "  Dev Tunnels CLI installed!" -ForegroundColor Green
-        Write-Host "  NOTE: First run requires GitHub/Microsoft login. Run: devtunnel user login" -ForegroundColor Cyan
     } else {
         Write-Host "ERROR: Failed to download Dev Tunnels CLI." -ForegroundColor Red
         exit 1
     }
 }
 
+# 4. Login to Microsoft Dev Tunnels (required for tunnel to work)
+Write-Host "[4/8] Microsoft Dev Tunnels login..." -ForegroundColor Yellow
+Write-Host "  A browser will open to authenticate with your GitHub or Microsoft account." -ForegroundColor Cyan
+Write-Host "  Press Enter after you have logged in..." -ForegroundColor Cyan
+Start-Process "https://agent.aka.ms/devtunnel/login"
+$null = Read-Host
+
 # 4. Compile the Rust backend
-Write-Host "[4/7] Compiling Rust backend..." -ForegroundColor Yellow
+Write-Host "[5/8] Compiling Rust backend..." -ForegroundColor Yellow
 Set-Location $backendDir
 cargo build --release
 if ($LASTEXITCODE -ne 0) {
@@ -92,7 +98,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  Backend compiled successfully!" -ForegroundColor Green
 
 # 5. Create shim directory and files
-Write-Host "[5/7] Setting up termote commands..." -ForegroundColor Yellow
+Write-Host "[6/8] Setting up termote commands..." -ForegroundColor Yellow
 
 if (-not (Test-Path $shimDir)) {
     New-Item -Type Directory -Force $shimDir | Out-Null
@@ -206,7 +212,7 @@ if ($userPath -notlike "*$shimDir*") {
 Write-Host "  Commands installed." -ForegroundColor Green
 
 # 6. Add "Open with Termote" context menu
-Write-Host "[6/7] Adding Windows Explorer context menu..." -ForegroundColor Yellow
+Write-Host "[7/8] Adding Windows Explorer context menu..." -ForegroundColor Yellow
 
 $termoteFileHandler = "$shimDir\termote-file.ps1"
 $handlerLines = @(
@@ -236,7 +242,7 @@ Set-ItemProperty -Path $cmdPath2 -Name "(Default)" -Value "powershell -WindowSty
 Write-Host "  Context menu installed." -ForegroundColor Green
 
 # 7. Start termote
-Write-Host "[7/7] Starting Termote server..." -ForegroundColor Yellow
+Write-Host "[8/8] Starting Termote server..." -ForegroundColor Yellow
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
