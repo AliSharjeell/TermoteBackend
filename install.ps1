@@ -46,31 +46,66 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     Write-Host "[2/6] Rust already installed, skipping..." -ForegroundColor Gray
 }
 
-# 3. Download cloudflared into the backend folder
-$backendDir = "$installDir\backend"
-$cloudflaredPath = "$backendDir\cloudflared.exe"
+# 3. Install cloudflared (Winget with direct download fallback)
+if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
+    Write-Host "[3/6] Installing Cloudflared tunnel client..." -ForegroundColor Yellow
+    
+    $installed = $false
 
-# Ensure backend directory exists
-if (-not (Test-Path $backendDir)) {
-    New-Item -Type Directory -Force $backendDir | Out-Null
-}
-
-if (-not (Test-Path $cloudflaredPath)) {
-    Write-Host "[3/6] Downloading Cloudflared tunnel client..." -ForegroundColor Yellow
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cloudflaredPath
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $cloudflaredPath)) {
-        Write-Host "ERROR: Failed to download cloudflared. Check your internet connection." -ForegroundColor Red
-        exit 1
+    # Attempt 1: Try using Winget first (Cleanest method)
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "  Found winget, attempting installation..." -ForegroundColor DarkGray
+        winget install --id Cloudflare.cloudflared --exact --accept-package-agreements --accept-source-agreements | Out-Null
+        
+        if ($LASTEXITCODE -eq 0 -and (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
+            $installed = $true
+            # Refresh the PATH variable for the current session
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+            Write-Host "  Cloudflared installed successfully via winget!" -ForegroundColor Green
+        } else {
+            Write-Host "  Winget installation failed. Pivoting to manual download..." -ForegroundColor Yellow
+        }
     }
-    Write-Host "  Cloudflared downloaded!" -ForegroundColor Green
+
+    # Attempt 2: Fallback to direct GitHub download if Winget fails or is missing
+    if (-not $installed) {
+        Write-Host "  Downloading directly from Cloudflare..." -ForegroundColor DarkGray
+        $termoteBinDir = "$installDir\bin"
+        $cloudflaredPath = "$termoteBinDir\cloudflared.exe"
+        $backendCloudflaredPath = "$backendDir\cloudflared.exe"
+
+        if (-not (Test-Path $termoteBinDir)) { New-Item -Type Directory -Force $termoteBinDir | Out-Null }
+
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cloudflaredPath
+
+        if (-not (Test-Path $cloudflaredPath)) {
+            Write-Host "ERROR: Failed to download cloudflared. Check your internet connection." -ForegroundColor Red
+            exit 1
+        }
+
+        # Copy to backend folder for start.ps1
+        Copy-Item $cloudflaredPath -Destination $backendCloudflaredPath -Force
+
+        # Add to current terminal session PATH
+        $env:Path += ";$termoteBinDir"
+
+        # Add to permanent Windows User PATH so it works in all future terminals
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ($userPath -notmatch [regex]::Escape($termoteBinDir)) {
+            [Environment]::SetEnvironmentVariable("Path", "$userPath;$termoteBinDir", "User")
+        }
+
+        Write-Host "  Cloudflared downloaded manually and added to global PATH!" -ForegroundColor Green
+    }
 } else {
-    Write-Host "[3/6] Cloudflared already present, skipping..." -ForegroundColor Gray
+    Write-Host "[3/6] Cloudflared already installed globally, skipping..." -ForegroundColor Gray
 }
 
 # 4. Compile the Rust backend
 Write-Host "[4/6] Compiling Rust backend (first-time only, ~3-5 min)..." -ForegroundColor Yellow
 Write-Host "  This may show no output for a while - that is normal. Rust is compiling." -ForegroundColor DarkGray
+$backendDir = "$installDir\backend"
 Set-Location $backendDir
 cargo build --release
 if ($LASTEXITCODE -ne 0) {
@@ -79,15 +114,46 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Backend compiled successfully!" -ForegroundColor Green
 
-# 5. Create a termote.ps1 shim in a permanent location
+# 5. Create a smart termote.ps1 shim in a permanent location
 Write-Host "[5/6] Setting up global termote command..." -ForegroundColor Yellow
 
 $shimDir = "$env:USERPROFILE\.termote-bin"
 if (-not (Test-Path $shimDir)) { New-Item -Type Directory -Force $shimDir | Out-Null }
 
-# Write a shim script that calls start.ps1
+# Write the smart launcher shim
 $shimPath = "$shimDir\termote.ps1"
-Set-Content -Path $shimPath -Value "& `"$installDir\start.ps1`""
+$shimContent = @"
+# Smart termote launcher - connects to existing session or starts new one
+`$backendDir = "$installDir\backend"
+`$envFile = "`$backendDir\.env"
+
+# Check if termote is already running
+`$isRunning = `$false
+try {
+    `$resp = Invoke-WebRequest -Uri "http://localhost:9090/health" -TimeoutSec 1 -EA SilentlyContinue
+    if (`$resp.StatusCode -eq 200) { `$isRunning = `$true }
+} catch { `$isRunning = `$false }
+
+if (`$isRunning) {
+    Write-Host "Termote is already running. Connecting to existing session..." -ForegroundColor Cyan
+    if (Test-Path `$envFile) {
+        `$content = Get-Content `$envFile -Raw
+        `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
+        `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
+        if (`$tunnelUrl -and `$token) {
+            `$launchUrl = "https://termote.vercel.app/?tunnel=`$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=`$(`[Uri]::EscapeDataString(`$token))"
+            Start-Process `$launchUrl
+            exit 0
+        }
+    }
+    Write-Host "Could not find session info. Starting new session..." -ForegroundColor Yellow
+}
+
+# Start termote
+Write-Host "Starting Termote server..." -ForegroundColor Green
+& "$installDir\start.ps1"
+"@
+Set-Content -Path $shimPath -Value $shimContent -Encoding UTF8
 
 # Add shimDir to permanent user PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
