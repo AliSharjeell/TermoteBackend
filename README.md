@@ -1,3 +1,4 @@
+<div align="center">
 ```
 ███████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗
 ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝
@@ -11,7 +12,7 @@
 A zero-setup, multi-pane remote terminal that turns any web browser into a powerful command center for your PC.
 
 **Access the Web Client:** [termote.vercel.app](https://termote.vercel.app)
-
+</div>
 ---
 Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your Windows machine's command line from any device with a browser.
 
