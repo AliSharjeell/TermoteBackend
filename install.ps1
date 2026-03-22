@@ -48,14 +48,37 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     Write-Host "[2/7] Rust already installed, skipping..." -ForegroundColor Gray
 }
 
-# 3. Check for SSH (built into Windows 10 1809+)
-Write-Host "[3/7] Checking for SSH..." -ForegroundColor Yellow
-if (Get-Command ssh -ErrorAction SilentlyContinue) {
-    Write-Host "  SSH found: $(ssh -V 2>&1)" -ForegroundColor Green
-} else {
-    Write-Host "  SSH not found. Windows 10 1809+ has SSH built-in." -ForegroundColor Red
-    Write-Host "  Enable it via: Settings > Apps > Optional Features > OpenSSH Client" -ForegroundColor Yellow
-    exit 1
+# 3. Install Microsoft Dev Tunnels CLI
+$devtunnelInstalled = $false
+if (Get-Command devtunnel -ErrorAction SilentlyContinue) {
+    $devtunnelInstalled = $true
+    Write-Host "[3/7] Microsoft Dev Tunnels already installed, skipping..." -ForegroundColor Gray
+}
+
+if (-not $devtunnelInstalled) {
+    Write-Host "[3/7] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
+
+    $termoteBinDir = "$installDir\bin"
+    $devtunnelPath = "$termoteBinDir\devtunnel.exe"
+
+    if (-not (Test-Path $termoteBinDir)) { New-Item -Type Directory -Force $termoteBinDir | Out-Null }
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $null = Invoke-WebRequest -Uri "https://aka.ms/TunnelToolWindowsAmd64" -OutFile $devtunnelPath -UseBasicParsing
+
+    if (Test-Path $devtunnelPath) {
+        $env:Path += ";$termoteBinDir"
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ($userPath -notlike "*$termoteBinDir*") {
+            [Environment]::SetEnvironmentVariable("Path", "$userPath;$termoteBinDir", "User")
+        }
+        $devtunnelInstalled = $true
+        Write-Host "  Dev Tunnels CLI installed!" -ForegroundColor Green
+        Write-Host "  NOTE: First run requires GitHub/Microsoft login. Run: devtunnel user login" -ForegroundColor Cyan
+    } else {
+        Write-Host "ERROR: Failed to download Dev Tunnels CLI." -ForegroundColor Red
+        exit 1
+    }
 }
 
 # 4. Compile the Rust backend
@@ -139,7 +162,7 @@ if ($termoteProc) {
     } else {
         Write-Host "Existing Termote instance is hung and won't respond. Restarting it..." -ForegroundColor Yellow
         Stop-Process -Name "termote" -Force -EA SilentlyContinue
-        Stop-Process -Name "ssh" -Force -EA SilentlyContinue
+        Stop-Process -Name "devtunnel" -Force -EA SilentlyContinue
         Start-Sleep -Seconds 1
     }
 }
@@ -160,7 +183,7 @@ $killLines = @(
     '# Termote Kill Script'
     'Write-Host "Stopping Termote..." -ForegroundColor Yellow'
     'Get-Process -Name "termote" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
-    'Get-Process -Name "ssh" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
+    'Get-Process -Name "devtunnel" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
     'Get-NetTCPConnection -LocalPort 9090 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }'
     'Get-NetTCPConnection -LocalPort 9091 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }'
     'Write-Host "All Termote instances stopped." -ForegroundColor Green'
