@@ -1,5 +1,5 @@
-﻿# Terminal Multiplexer Start Script
-# Generates auth token, starts Serveo SSH tunnel, and runs the backend
+# Terminal Multiplexer Start Script
+# Generates auth token, starts Microsoft Dev Tunnel, and runs the backend
 
 $backendDir = $PSScriptRoot
 
@@ -13,50 +13,67 @@ if (Test-Path $tunnelLog) { Remove-Item $tunnelLog -Force }
 
 # 2. Kill dangling processes
 Write-Host "Cleaning up any stale processes..." -ForegroundColor DarkGray
-Stop-Process -Name "termote", "ssh" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "termote", "devtunnel" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
-Write-Host "Starting Serveo.net SSH tunnel..." -ForegroundColor Yellow
+# Check if devtunnel.exe exists
+$devtunnelExe = "$backendDir\devtunnel.exe"
+if (-not (Test-Path $devtunnelExe)) {
+    $globalDevtunnel = Get-Command devtunnel -ErrorAction SilentlyContinue
+    if ($globalDevtunnel) {
+        $devtunnelExe = $globalDevtunnel.Source
+    } else {
+        Write-Host "devtunnel not found. Run install.ps1 first to install it." -ForegroundColor Red
+        exit 1
+    }
+}
 
-# 3. The exact command you ran manually, minus the invisible flags!
-$sshCmd = "ssh -R 80:localhost:9090 serveo.net -o StrictHostKeyChecking=no -o ServerAliveInterval=60"
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$sshCmd > `"$tunnelLog`" 2>&1`"" -WindowStyle Hidden
+Write-Host "Starting Microsoft Dev Tunnel..." -ForegroundColor Yellow
+
+# 3. Start devtunnel host
+# --allow-anonymous: anyone with the URL can connect (no auth needed)
+$process = Start-Process -FilePath $devtunnelExe -ArgumentList "host", "-p", "9090", "--allow-anonymous" -NoNewWindow -PassThru -RedirectStandardOutput $tunnelLog
 
 # 4. Wait up to 15 seconds for the URL
 Write-Host "Waiting for tunnel URL..." -ForegroundColor DarkGray
-$serveoUrl = ""
+$devtunnelUrl = ""
 $startTime = Get-Date
 
 while (((Get-Date) - $startTime).TotalSeconds -lt 15) {
     if (Test-Path $tunnelLog) {
         $content = Get-Content $tunnelLog -ErrorAction SilentlyContinue
         foreach ($line in $content) {
-            # Matches your exact output: serveousercontent.com
-            if ($line -match '(https?://[a-zA-Z0-9_-]+\.serveousercontent\.com)') {
-                $serveoUrl = $Matches[1]
+            # Dev Tunnels URLs look like: https://abc123-4567890.devtunnel.io
+            if ($line -match '(https://[a-zA-Z0-9_-]+\.devtunnel\.io)') {
+                $devtunnelUrl = $Matches[1]
                 break
             }
         }
     }
-    if ($serveoUrl) { break }
+    if ($devtunnelUrl) { break }
+    if ($process.HasExited) {
+        Write-Host "Dev tunnel process exited early with code: $($process.ExitCode)" -ForegroundColor Red
+        break
+    }
     Start-Sleep -Seconds 1
 }
 
-if ($serveoUrl) {
-    $wsUrl = $serveoUrl -replace '^http://', 'ws://' -replace '^https://', 'wss://'
+if ($devtunnelUrl) {
+    $wsUrl = $devtunnelUrl -replace '^https://', 'wss://'
     $env:TUNNEL_URL = $wsUrl
-    
+
     # Write to .env so backend picks it up
     Set-Content -Path "$backendDir\.env" -Value "AUTH_TOKEN=$token`nTUNNEL_URL=$wsUrl" -Encoding UTF8
-    
+
     Write-Host ""
     Write-Host "========================================================" -ForegroundColor Green
     Write-Host " Termote is Live!" -ForegroundColor White
-    Write-Host " Terminal URL: https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($wsUrl + '/ws'))&token=$token" -ForegroundColor Cyan
+    Write-Host " Tunnel URL: $devtunnelUrl" -ForegroundColor Cyan
+    Write-Host " WebSocket: $wsUrl/ws" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Green
     Write-Host ""
 } else {
-    Write-Host "Warning: Could not determine Serveo tunnel URL." -ForegroundColor Red
+    Write-Host "Warning: Could not determine Dev Tunnel URL." -ForegroundColor Red
     Write-Host "--- Log Output ---" -ForegroundColor Yellow
     if (Test-Path $tunnelLog) { Get-Content $tunnelLog }
 }
