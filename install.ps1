@@ -240,9 +240,21 @@ Write-Host "[7/8] Adding Windows Explorer context menu..." -ForegroundColor Yell
 
 $termoteFileHandler = "$shimDir\termote-file.ps1"
 $handlerLines = @(
-    '$dir = Split-Path -Parent $args[0]'
-    'Start-Process powershell -ArgumentList "-NoExit","-Command","Set-Location $dir; termote" -WindowStyle Normal'
+    '$rawPath = $args[0]'
+    'if (-not $rawPath) { $rawPath = (Get-Location).Path }'
+    '$dir = if (Test-Path $rawPath -PathType Leaf) { Split-Path -Parent $rawPath } else { $rawPath }'
+    '$dir = $dir -replace '^"|"$', ''''''
+    '# Send open_dir IPC directly — no new window spawned'
+    '$client = New-Object System.Net.Sockets.TcpClient'
+    '$client.Connect("127.0.0.1", 9091)'
+    '$stream = $client.GetStream()'
+    '$writer = New-Object System.IO.StreamWriter($stream)'
+    '$writer.WriteLine("open_dir:$dir")'
+    '$writer.Flush()'
+    '$stream.Close()'
+    '$client.Close()'
 )
+
 Set-Content -Path $termoteFileHandler -Value $handlerLines -Encoding UTF8
 
 # Folder background (right-click in empty space)
