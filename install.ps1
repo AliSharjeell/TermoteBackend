@@ -120,12 +120,35 @@ Write-Host "[5/6] Setting up global termote command..." -ForegroundColor Yellow
 $shimDir = "$env:USERPROFILE\.termote-bin"
 if (-not (Test-Path $shimDir)) { New-Item -Type Directory -Force $shimDir | Out-Null }
 
-# Write the smart launcher shim
+# Write the smart launcher shim (VS Code style - single instance)
 $shimPath = "$shimDir\termote.ps1"
 $shimContent = @"
-# Smart termote launcher - connects to existing session or starts new one
-`$backendDir = "$installDir\backend"
+# Smart termote launcher - VS Code style single instance
+# If termote is running, sends open_dir command via IPC
+# If not running, starts termote fresh
+
+`$backendDir = "`$env:USERPROFILE\termote\backend"
 `$envFile = "`$backendDir\.env"
+`$termoteDir = "`$env:USERPROFILE\termote"
+
+function Send-IpcCommand(`$cmd) {
+    try {
+        `$client = New-Object System.Net.Sockets.TcpClient
+        `$client.Connect("127.0.0.1", 9091)
+        `$stream = `$client.GetStream()
+        `$writer = New-Object System.IO.StreamWriter(`$stream)
+        `$writer.WriteLine(`$cmd)
+        `$writer.Flush()
+        `$stream.Close()
+        `$client.Close()
+        return `$true
+    } catch {
+        return `$false
+    }
+}
+
+# Get current directory
+`$cwd = (Get-Location).Path
 
 # Check if termote is already running
 `$isRunning = `$false
@@ -135,23 +158,28 @@ try {
 } catch { `$isRunning = `$false }
 
 if (`$isRunning) {
-    Write-Host "Termote is already running. Connecting to existing session..." -ForegroundColor Cyan
-    if (Test-Path `$envFile) {
-        `$content = Get-Content `$envFile -Raw
-        `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
-        `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
-        if (`$tunnelUrl -and `$token) {
-            `$launchUrl = "https://termote.vercel.app/?tunnel=`$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=`$(`[Uri]::EscapeDataString(`$token))"
-            Start-Process `$launchUrl
-            exit 0
+    Write-Host "Termote is running. Opening new tab at: `$cwd" -ForegroundColor Cyan
+    `$sent = Send-IpcCommand "open_dir:`$cwd"
+    if (`$sent) {
+        # Open browser to existing session
+        if (Test-Path `$envFile) {
+            `$content = Get-Content `$envFile -Raw
+            `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
+            `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
+            if (`$tunnelUrl -and `$token) {
+                `$launchUrl = "https://termote.vercel.app/?tunnel=`$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=`$(`[Uri]::EscapeDataString(`$token))"
+                Start-Process `$launchUrl
+            }
         }
+        exit 0
+    } else {
+        Write-Host "IPC failed, starting new instance..." -ForegroundColor Yellow
     }
-    Write-Host "Could not find session info. Starting new session..." -ForegroundColor Yellow
 }
 
 # Start termote
 Write-Host "Starting Termote server..." -ForegroundColor Green
-& "$installDir\start.ps1"
+& "`$termoteDir\start.ps1"
 "@
 Set-Content -Path $shimPath -Value $shimContent -Encoding UTF8
 

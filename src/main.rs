@@ -7,11 +7,54 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::serve;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::TcpListener;
 use tower_http::cors::{CorsLayer, Any};
-use tracing::{info, Level};
+use tracing::{info, Level, error};
 use tracing_subscriber::FmtSubscriber;
 
 use termote::{create_router, AppState};
+
+/// IPC server for single-instance behavior.
+/// Listens on localhost:9091 for commands like "open_dir:<path>"
+async fn run_ipc_server(state: Arc<AppState>) {
+    let addr = "127.0.0.1:9091";
+    let listener = match TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind IPC server on {}: {}", addr, e);
+            return;
+        }
+    };
+    info!("IPC server listening on {}", addr);
+
+    loop {
+        match listener.accept().await {
+            Ok((mut stream, _)) => {
+                let state = state.clone();
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(&mut stream);
+                    let mut line = String::new();
+                    if let Ok(n) = reader.read_line(&mut line).await {
+                        if n > 0 {
+                            let line = line.trim();
+                            info!("IPC received: {}", line);
+                            if let Some(path) = line.strip_prefix("open_dir:") {
+                                let path = path.trim();
+                                if let Err(e) = state.spawn_pane_at_dir(path, "powershell.exe").await {
+                                    error!("Failed to spawn pane at {}: {}", path, e);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            Err(e) => {
+                error!("IPC accept error: {}", e);
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -58,6 +101,12 @@ async fn main() {
 
     // Create application state
     let state = Arc::new(AppState::new(auth_token.clone(), frontend_url.clone(), tunnel_url.clone()));
+
+    // Start IPC server for single-instance behavior
+    let ipc_state = state.clone();
+    tokio::spawn(async move {
+        run_ipc_server(ipc_state).await;
+    });
 
     // Create router with CORS
     let app = create_router(state)

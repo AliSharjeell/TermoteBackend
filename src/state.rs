@@ -236,6 +236,56 @@ impl AppState {
         let auth = self.authenticated.read().await;
         *auth
     }
+
+    /// Spawns a new pane with the shell starting in the specified directory.
+    /// Returns the pane_id if successful.
+    pub async fn spawn_pane_at_dir(
+        &self,
+        dir: &str,
+        shell: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let shell_to_use = if shell.is_empty() { "powershell.exe" } else { shell };
+
+        // Spawn the PTY
+        let (pane_id, pid) = self.pty_manager.spawn_pty(
+            shell_to_use,
+            80,
+            24,
+            self.clone(),
+            &self.broadcast_tx,
+        )?;
+
+        // Create pane with correct ID
+        let mut pane = Pane::new(pid, shell_to_use.to_string(), 80, 24);
+        pane.id = pane_id.clone();
+        self.add_pane(pane).await;
+
+        // Wait a bit for shell to start, then cd to directory
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        // Send cd command to the pane
+        #[cfg(windows)]
+        let cd_cmd = format!("cd '{}'; Clear-Host\n", dir.replace("'", "''"));
+        #[cfg(not(windows))]
+        let cd_cmd = format!("cd '{}'; clear\n", dir.replace("'", "\\'"));
+
+        if let Err(e) = self.pty_manager.write_input_raw(&pane_id, &cd_cmd) {
+            tracing::error!("Failed to cd to directory {}: {}", dir, e);
+        }
+
+        // Broadcast state update
+        let panes = self.get_panes_info().await;
+        let active_panes = self.get_active_panes().await;
+        let floating_panes = self.get_floating_panes().await;
+        let _ = self.broadcast_tx.send(crate::messages::ServerMessage::StateUpdate {
+            panes,
+            active_panes,
+            floating_panes,
+        });
+
+        tracing::info!("Spawned pane {} at directory {}", pane_id, dir);
+        Ok(pane_id)
+    }
 }
 
 #[cfg(test)]

@@ -260,6 +260,21 @@ impl PtyManager {
 
         Ok(())
     }
+
+    /// Writes input to a PTY pane and flushes immediately.
+    pub fn write_input_raw(
+        &self,
+        pane_id: &str,
+        data: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut writers = self.master_writer.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+        if let Some(writer) = writers.get_mut(pane_id) {
+            writer.write_all(data.as_bytes())?;
+            writer.flush()?;
+        }
+        Ok(())
+    }
 }
 
 impl Default for PtyManager {
