@@ -57,6 +57,8 @@ Run this one-liner on your Windows machine:
 
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1 | iex"
+
+Note: On your very first run, a browser window will pop up asking you to authenticate with GitHub or Microsoft. This is a one-time setup required by Microsoft Dev Tunnels to securely route your connection.
 ```
 
 ### Available Commands
