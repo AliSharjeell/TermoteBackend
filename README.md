@@ -27,7 +27,7 @@ Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punchin
 | **Anywhere, Any Network** | Ditch the VPNs and port forwarding. Termote securely punches through NATs and firewalls, giving you instant access to your machine whether you are on the same Wi-Fi or halfway across the world. |
 | **Multi-Pane Terminal (Like tmux, but visual)** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
 | **Smart Single-Instance** | Already have Termote running? Typing `termote` in a new local folder or clicking "Open with Termote" won't spawn a redundant server. It intelligently connects to your active session and opens a new pane for that directory. |
-| **Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. If a device has a web browser, it is now a fully functional command center with a beautiful, responsive UI. |
+| **Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. Any device with a browser becomes your command center with a beautiful, responsive UI. |
 | **Runs directly on your PC (no cloud, no lag)** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
 
 ---
@@ -47,6 +47,13 @@ You just kicked off a massive compilation, a 4-hour web scraping script, or a ma
 You are on a restrictive school or corporate Wi-Fi network that aggressively blocks SSH (Port 22). Because Termote wraps your terminal stream in standard, encrypted WebSockets over HTTPS (Port 443), it slices right through aggressive firewalls, letting you reach your home machine undetected.
 
 ---
+
+## ⚡ 60-Second Setup
+
+1. Run the install command  
+2. Termote UI launches  
+3. You can scan the QR for your phone or copy link for other devices
+4. Your PC terminal is now anywhere
 
 ## Installation
 
