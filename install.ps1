@@ -239,13 +239,16 @@ $linkLines = @(
     '$esc = "`e"'
     '$hyperlink = "$esc]8;;$shareLink$esc\$esc]8;;$esc\"'
     ''
-    'Write-Host ""'
-    'Write-Host "  Termote Connection Info" -ForegroundColor Cyan'
-    'Write-Host "  ─────────────────────" -ForegroundColor Cyan'
-    "Write-Host '  Tunnel (WSS): ' -NoNewline; Write-Host $tunnelUrl -ForegroundColor White'
-    "Write-Host '  Password:     ' -NoNewline; Write-Host $token -ForegroundColor White'
-    "Write-Host '  Share Link:   ' -NoNewline; Write-Host "${hyperlink}Open in Browser${esc}]8;;${esc}\" -ForegroundColor Green'
-    'Write-Host ""'
+    $launchUrl = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($wsUrl + '/ws'))&token=$token"
+    $esc = [char]27
+    $clickableLink = "${esc}]8;;${launchUrl}${esc}\Open Termote in Browser${esc}]8;;${esc}\"
+    Write-Host ""
+    Write-Host "  Termote Connection Info" -ForegroundColor Cyan
+    Write-Host "  ─────────────────────" -ForegroundColor Cyan
+    Write-Host "  Tunnel (WSS): " -NoNewline; Write-Host $wsUrl -ForegroundColor White
+    Write-Host "  Password:     " -NoNewline; Write-Host $token -ForegroundColor White
+    Write-Host "  Share Link:   " -NoNewline; Write-Host $clickableLink -ForegroundColor Green
+    Write-Host ""
 )
 Set-Content -Path "$shimDir\termote-link.ps1" -Value $linkLines -Encoding UTF8
 
