@@ -1,9 +1,3 @@
-# Termote
-
-**Your local CLI, anywhere.**
-
-A zero-setup, multi-pane remote terminal that turns any web browser into a powerful command center for your PC.
-
 ```
 ███████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗
 ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝
@@ -12,12 +6,14 @@ A zero-setup, multi-pane remote terminal that turns any web browser into a power
    ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗
    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝
 ```
+**Your local CLI, anywhere.**
 
-**Browser-accessible terminal multiplexer for Windows**
+A zero-setup, multi-pane remote terminal that turns any web browser into a powerful command center for your PC.
 
-Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your Windows machine's command line from any device with a browser.
+**Access the Web Client:** [termote.vercel.app](https://termote.vercel.app)
 
 ---
+Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your Windows machine's command line from any device with a browser.
 
 ## Core Features
 
@@ -25,6 +21,7 @@ Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punchin
 |---------|-------------|
 | **Anywhere, Any Network** | Ditch the VPNs and port forwarding. Termote securely punches through NATs and firewalls, giving you instant access to your machine whether you are on the same Wi-Fi or halfway across the world. |
 | **Infinite Multiplexing** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
+| **Smart Single-Instance** | Already have Termote running? Typing `termote` in a new local folder or clicking "Open with Termote" won't spawn a redundant server. It intelligently connects to your active session and opens a new pane for that directory. |
 | **Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. If a device has a web browser, it is now a fully functional command center with a beautiful, responsive UI. |
 | **Native Local Execution** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
 
@@ -55,18 +52,33 @@ Run this one-liner on your Windows machine:
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1 | iex"
 ```
-Note: On your very first run, a browser window will pop up asking you to authenticate with GitHub or Microsoft. This is a one-time setup required by Microsoft Dev Tunnels to securely route your connection.
+> **Note:** On your very first run, a browser window will pop up asking you to authenticate with GitHub or Microsoft. This is a one-time setup required by Microsoft Dev Tunnels to securely route your connection.
 
-### Available Commands
+**Troubleshooting:** If the `termote` command is not found immediately after installation, restart your terminal or run this to refresh your environment variables:
+
+```powershell
+$env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+```
+
+## Connecting Devices (QR Code & Sharing)
+
+Termote makes it incredibly easy to jump from your PC to your phone or another laptop right from the web interface. 
+
+When you open your Termote dashboard, look for the connection tools built directly into the UI:
+
+* **QR Code for Mobile:** Click the QR code button in the web UI and scan it with your phone's camera to instantly open your terminal session on your mobile device.
+* **Quick Share Link:** Use the shareable link button to copy your secure tunnel URL and password, ready to paste into any browser or send to a teammate.
+
+## Available Commands
 
 After installation, the following commands are available in your terminal:
 
 | Command | Description |
 |---------|-------------|
-| `termote` | Start or connect to Termote |
-| `termote-kill` | Stop all Termote instances |
-| `termote-link` | Show tunnel URL, password & share link |
-| Right-click in folder → **"Open with Termote"** | Open a terminal pane at the current directory |
+| `termote` | Starts the server. If already running, opens the current directory as a new pane in your active session. |
+| `termote-kill` | Safely shuts down all Termote instances and active tunnels. |
+| `termote-link` | Displays your active tunnel URL, password, and shareable link. |
+| Right-click in folder → **"Open with Termote"** | Instantly opens a new terminal pane for that specific folder in your existing web UI. |
 
 ---
 
