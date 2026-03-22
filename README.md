@@ -1,183 +1,91 @@
 # Termote
 
-A web-native terminal multiplexer written in Rust. Run a lightweight daemon on your host machine and access, split, and manage terminal panes from any browser on any device.
+**Your local CLI, anywhere.**
 
-## Features
-
-- **Web-native**: Access your terminals from any modern browser
-- **Split panes**: Create multiple terminal panes in a grid layout
-- **Tabs view**: Organize terminals in a tabbed interface
-- **Mobile ready**: Scan QR code to connect from your phone
-- **Real-time**: WebSocket-powered instant response
-- **Cross-device**: Seamless switching between desktop and mobile
-- **Resize circuit breaker**: Prevents flicker when multiple devices connect
-
-## Architecture
+A zero-setup, multi-pane remote terminal that turns any web browser into a powerful command center for your PC.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Browser Clients                      │
-│  (Desktop, Mobile, Tablet - any modern browser)          │
-└─────────────────────────────────────────────────────────┘
-                            │
-                            │ WebSocket (wss://)
-                            ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Termote Backend                       │
-│                                                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │ WS Handler │  │  PTY Manager │  │ State (ARC) │    │
-│  │  (axum)    │  │ (portable-pty)│  │  (RwLock)   │    │
-│  └─────────────┘  └─────────────┘  └─────────────┘    │
-│         │                                    │           │
-│         │         Broadcast Channel          │           │
-│         │      (tokio broadcast)            │           │
-│         └──────────────┬────────────────────┘           │
-│                        │                                 │
-│  ┌────────────────────▼────────────────────────────┐   │
-│  │              PTY Processes (spawned shells)       │   │
-│  │   powershell.exe / cmd.exe / wsl                 │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+███████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗
+╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝
+   ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝
+   ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗
+   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝
 ```
 
-### Components
+**Browser-accessible terminal multiplexer for Windows
 
-- **axum WebSocket handler**: Handles client connections, authentication, and message routing
-- **PTY Manager**: Spawns and manages pseudo-terminals using `portable-pty`
-- **AppState**: Shared state across all WebSocket connections using `Arc<RwLock>`
-- **Broadcast channel**: Radio tower pattern for multi-client sync
+Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your Windows machine's command line from any device with a browser.
 
-## Protocol
+---
 
-### Client → Server Messages
+## ✨ Core Features
 
-All messages are JSON with an `action` field:
+| Feature | Description |
+|---------|-------------|
+| **🌍 Anywhere, Any Network** | Ditch the VPNs and port forwarding. Termote securely punches through NATs and firewalls, giving you instant access to your machine whether you are on the same Wi-Fi or halfway across the world. |
+| **🎛️ Infinite Multiplexing** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
+| **📱 Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. If a device has a web browser, it is now a fully functional command center with a beautiful, responsive UI. |
+| **⚡ Native Local Execution** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
 
-```json
-// Authenticate
-{ "action": "auth", "token": "your-auth-token" }
+---
 
-// Spawn a new terminal
-{ "action": "spawn", "shell": "powershell" }
+## 🚀 Real-World Use Cases
 
-// Send input to a pane
-{ "action": "input", "pane_id": "uuid", "data": "ls -la\n" }
+### 🤖 The Mobile AI Agent Commander
+You are out grabbing coffee, but you want your beefy home rig to start working on a task. Pull out your phone, open Termote, and spin up AutoGPT, a local LLM, or a CLI-based AI agent. You can monitor its thought process and give it real-time corrections right from your mobile browser.
 
-// Resize a pane (with circuit breaker)
-{ "action": "resize", "pane_id": "uuid", "cols": 120, "rows": 30 }
+### 🔥 The "Dinner Emergency" Server Fix
+You are out with friends and get an alert that your local dev server, home lab, or Discord bot just crashed. Instead of rushing home, you quietly open Termote on your phone, run a quick `docker restart` or `pm2 reload`, and go right back to eating.
 
-// Force refocus (ignores circuit breaker, broadcasts to all)
-{ "action": "refocus", "pane_id": "uuid", "cols": 120, "rows": 30 }
+### ⏳ Monitoring Heavy-Duty Jobs from the Couch
+You just kicked off a massive compilation, a 4-hour web scraping script, or a machine learning training epoch on your desktop PC. Instead of sitting at your desk staring at a progress bar, grab your iPad, head to the couch, and keep a live Termote pane open next to your Netflix stream.
 
-// Kill a pane
-{ "action": "kill", "pane_id": "uuid" }
+### 🛡️ Bypassing Locked-Down Networks
+You are on a restrictive school or corporate Wi-Fi network that aggressively blocks SSH (Port 22). Because Termote wraps your terminal stream in standard, encrypted WebSockets over HTTPS (Port 443), it slices right through aggressive firewalls, letting you reach your home machine undetected.
 
-// Move pane to floating tabs
-{ "action": "move_to_floating", "pane_id": "uuid" }
+### 👀 The "Look Over My Shoulder" Live Share
+You are debugging a weird error and want a friend or mentor to see exactly what your console is spitting out. Instead of sharing your whole screen on Discord, you send them a secure link.
 
-// Move pane to active grid
-{ "action": "move_to_active", "pane_id": "uuid" }
+---
 
-// Rename a pane
-{ "action": "rename", "pane_id": "uuid", "name": "My Server" }
+## 📦 Installation
+
+### Quick Install (PowerShell)
+
+Run this one-liner on your Windows machine:
+
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1 | iex"
 ```
 
-### Server → Client Messages
+### Available Commands
 
-All messages are JSON with an `event` field:
+After installation, the following commands are available in your terminal:
 
-```json
-// Authentication result
-{ "event": "auth_result", "success": true, "message": "Authenticated" }
+| Command | Description |
+|---------|-------------|
+| `termote` | Start or connect to Termote |
+| `termote-kill` | Stop all Termote instances |
+| `termote-link` | Show tunnel URL, password & share link |
+| Right-click in folder → **"Open with Termote"** | Open a terminal pane at the current directory |
 
-// State update (pane add/remove/resize)
-{
-  "event": "state_update",
-  "panes": [{ "id": "uuid", "pid": 1234, "shell": "powershell", "name": "Shell 1", "cols": 80, "rows": 24 }],
-  "active_panes": ["uuid"],
-  "floating_panes": []
-}
+---
 
-// Terminal output
-{ "event": "output", "pane_id": "uuid", "data": "user@host:~$ " }
-```
+## 🤝 Contributing
 
-## Environment Variables
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `AUTH_TOKEN` | No | Auto-generated | Secret token for authentication |
-| `PORT` | No | 9090 | HTTP server port |
-| `FRONTEND_URL` | No | https://termote.vercel.app | URL of the frontend |
-| `TUNNEL_URL` | No | ws://127.0.0.1:9090 | Public WebSocket URL of this server |
+---
 
-## Setup
+## ⭐ Show Your Support
 
-### Prerequisites
+If Termote saved you from rushing home to fix a broken server, or made your mobile command-line life easier — give it a star!
 
-- Rust 1.75+
-- Windows (PTY support via `portable-pty`)
+[![Star](https://img.shields.io/github/stars/AliSharjeell/Termote?style=social)](https://github.com/AliSharjeell/Termote)
 
-### Build
+---
 
-```bash
-cargo build --release
-```
+## 📄 License
 
-### Run
-
-```bash
-# With defaults (auto-generates token, port 9090)
-cargo run --release
-
-# With environment variables
-AUTH_TOKEN=my-secret-token PORT=8080 TUNNEL_URL=wss://example.com cargo run --release
-```
-
-### Example .env file
-
-```env
-AUTH_TOKEN=my-secret-token
-PORT=9090
-FRONTEND_URL=https://termote.example.com
-TUNNEL_URL=wss://termote.example.com
-```
-
-## Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/ws` | GET | WebSocket connection |
-| `/health` | GET | Health check |
-| `/launch` | GET | Auto-login redirect to frontend |
-
-## Security
-
-- **Token authentication**: All WebSocket connections must authenticate within 5 seconds
-- **CORS enabled**: Allows all origins for development
-- **Auto-logout**: Connection closes if authentication fails
-
-## Scrollback Buffer
-
-Each pane maintains a 1MB scrollback buffer. When a new client connects, the buffer is replayed to provide context.
-
-## Resize Circuit Breaker
-
-To prevent resize conflicts when multiple devices connect:
-
-1. **Frontend debouncing**: Resize requests are debounced 200ms and only sent if dimensions changed
-2. **Backend circuit breaker**: Skips resize if dimensions match current state
-3. **Refocus action**: Forces resize without circuit breaker for device switching
-
-## Windows Support
-
-Uses `portable-pty` for cross-platform PTY management. Supported shells:
-
-- `powershell.exe` (default)
-- `cmd.exe`
-- `wsl` (Windows Subsystem for Linux)
-
-## License
-
-MIT
+This project is licensed under the MIT License.
