@@ -32,6 +32,15 @@ if (-not (Test-Path $installDir)) {
     Write-Host "[1/8] Updating existing Termote installation..." -ForegroundColor Yellow
     Set-Location $installDir
     git pull origin $Branch
+
+    # Sync updated scripts and binary from repo to installed location
+    # $PSScriptRoot is the repo on disk (has our edits), $backendDir is the target install
+    Write-Host "  Syncing updated files to installed location..." -ForegroundColor Gray
+    Copy-Item -Path "$PSScriptRoot\start.ps1" -Destination "$backendDir\start.ps1" -Force
+    Copy-Item -Path "$PSScriptRoot\install.ps1" -Destination "$backendDir\install.ps1" -Force
+    if (Test-Path "$PSScriptRoot\target\release\termote.exe") {
+        Copy-Item -Path "$PSScriptRoot\target\release\termote.exe" -Destination "$backendDir\target\release\termote.exe" -Force
+    }
 }
 
 # 2. Install Rust if not present
@@ -48,45 +57,47 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     Write-Host "[2/8] Rust already installed, skipping..." -ForegroundColor Gray
 }
 
-# 3. Install Microsoft Dev Tunnels CLI
-$devtunnelInstalled = $false
-if (Get-Command devtunnel -ErrorAction SilentlyContinue) {
-    $devtunnelInstalled = $true
-    Write-Host "[3/8] Microsoft Dev Tunnels already installed, skipping..." -ForegroundColor Gray
+# 3. Installing Dev Tunnels with a sanity check
+Write-Host "[3/8] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
+$devtunnelPath = "$installDir\bin\devtunnel.exe"
+
+# Ensure bin directory exists
+if (-not (Test-Path "$installDir\bin")) {
+    New-Item -Type Directory -Force "$installDir\bin" | Out-Null
 }
 
-if (-not $devtunnelInstalled) {
-    Write-Host "[3/8] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
+# Use curl.exe (built into Windows 10/11) — handles GitHub redirects reliably
+Write-Host "  Downloading devtunnel.exe..." -ForegroundColor Gray
+curl.exe -L --silent --show-error -o $devtunnelPath "https://github.com/microsoft/dev-tunnels/releases/latest/download/devtunnel-win-x64.exe"
 
-    $termoteBinDir = "$installDir\bin"
-    $devtunnelPath = "$termoteBinDir\devtunnel.exe"
-
-    if (-not (Test-Path $termoteBinDir)) { New-Item -Type Directory -Force $termoteBinDir | Out-Null }
-
+# Sanity Check: If the file is smaller than 1MB, it's definitely a failed download
+if (-not (Test-Path $devtunnelPath) -or (Get-Item $devtunnelPath).Length -lt 1MB) {
+    Write-Host "  curl.exe failed, trying direct MS download link..." -ForegroundColor Yellow
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $null = Invoke-WebRequest -Uri "https://aka.ms/TunnelToolWindowsAmd64" -OutFile $devtunnelPath -UseBasicParsing
-
-    if (Test-Path $devtunnelPath) {
-        $env:Path += ";$termoteBinDir"
-        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        if ($userPath -notlike "*$termoteBinDir*") {
-            [Environment]::SetEnvironmentVariable("Path", "$userPath;$termoteBinDir", "User")
-        }
-        $devtunnelInstalled = $true
-        Write-Host "  Dev Tunnels CLI installed!" -ForegroundColor Green
-    } else {
-        Write-Host "ERROR: Failed to download Dev Tunnels CLI." -ForegroundColor Red
-        exit 1
-    }
+    Invoke-WebRequest -Uri "https://aka.ms/TunnelsCliDownload/win-x64" -OutFile $devtunnelPath -UseBasicParsing
 }
 
-# 4. Login to Microsoft Dev Tunnels (required for tunnel to work)
+if (-not (Test-Path $devtunnelPath) -or (Get-Item $devtunnelPath).Length -lt 1MB) {
+    Write-Host "ERROR: All download attempts failed." -ForegroundColor Red
+    Write-Host "  Manual fix: Download devtunnel.exe from https://aka.ms/TunnelsCliDownload/win-x64" -ForegroundColor Yellow
+    Write-Host "  Save it to: $devtunnelPath" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "  Dev Tunnels CLI installed and verified!" -ForegroundColor Green
+# 4. Login to Microsoft Dev Tunnels (Official CLI Method)
 Write-Host "[4/8] Microsoft Dev Tunnels login..." -ForegroundColor Yellow
-Write-Host "  A browser will open to authenticate with your GitHub or Microsoft account." -ForegroundColor Cyan
-Write-Host "  Press Enter after you have logged in..." -ForegroundColor Cyan
-Start-Process "https://agent.aka.ms/devtunnel/login"
-$null = Read-Host
+Write-Host "  A browser window will now open for authentication." -ForegroundColor Cyan
+Write-Host "  If the browser doesn't open, copy the link printed below." -ForegroundColor Gray
+Write-Host ""
 
+# Call the CLI directly to handle the login flow
+& $devtunnelPath user login -g
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNING: Login was not completed or failed." -ForegroundColor Yellow
+} else {
+    Write-Host "  Login successful!" -ForegroundColor Green
+}
 # 4. Compile the Rust backend
 Write-Host "[5/8] Compiling Rust backend..." -ForegroundColor Yellow
 Set-Location $backendDir
