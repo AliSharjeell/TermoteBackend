@@ -166,7 +166,53 @@ if ($userPath -notlike "*$shimDir*") {
 $env:PATH += ";$shimDir"
 
 Write-Host "  Global termote command installed." -ForegroundColor Green
-Write-Host "[6/6] Starting Termote server..." -ForegroundColor Yellow
+
+# 6. Add "Open with Termote" to Windows Explorer context menu
+Write-Host "[6/7] Adding Windows Explorer context menu..." -ForegroundColor Yellow
+
+$shimPath = "$shimDir\termote.ps1"
+$termoteFileHandler = "$shimDir\termote-file.ps1"
+
+# Create a handler script for context menu (just launches termote)
+$handlerContent = @"
+# Context menu handler - just launches termote
+`$dir = Split-Path -Parent `$args[0]
+Start-Process powershell -ArgumentList "-NoExit","-Command","Set-Location `$dir; termote" -WindowStyle Normal
+"@
+Set-Content -Path $termoteFileHandler -Value $handlerContent -Encoding UTF8
+
+# Add registry entries for folders (right-click on folder background)
+$regPath = "HKCU:\Software\Classes\Directory\Background\shell\Termote"
+$cmdPath = "$regPath\command"
+
+if (-not (Test-Path $regPath)) {
+    New-Item -Path $regPath -Force | Out-Null
+    Set-ItemProperty -Path $regPath -Name "(Default)" -Value "Open with Termote"
+    Set-ItemProperty -Path $regPath -Name "Icon" -Value "`"$shimPath`",0"
+}
+
+if (-not (Test-Path $cmdPath)) {
+    New-Item -Path $cmdPath -Force | Out-Null
+}
+Set-ItemProperty -Path $cmdPath -Name "(Default)" -Value "powershell -WindowStyle Hidden -File `"$termoteFileHandler`" `"%V`""
+
+# Add registry entries for directory (right-click on folder icon)
+$regPath2 = "HKCU:\Software\Classes\Directory\shell\Termote"
+$cmdPath2 = "$regPath2\command"
+
+if (-not (Test-Path $regPath2)) {
+    New-Item -Path $regPath2 -Force | Out-Null
+    Set-ItemProperty -Path $regPath2 -Name "(Default)" -Value "Open with Termote"
+    Set-ItemProperty -Path $regPath2 -Name "Icon" -Value "`"$shimPath`",0"
+}
+
+if (-not (Test-Path $cmdPath2)) {
+    New-Item -Path $cmdPath2 -Force | Out-Null
+}
+Set-ItemProperty -Path $cmdPath2 -Name "(Default)" -Value "powershell -WindowStyle Hidden -File `"$termoteFileHandler`" `"%1`""
+
+Write-Host "  Context menu installed (right-click in folder background)." -ForegroundColor Green
+Write-Host "[7/7] Starting Termote server..." -ForegroundColor Yellow
 
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  Installation complete! Starting server now..." -ForegroundColor Green
