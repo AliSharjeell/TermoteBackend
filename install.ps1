@@ -84,8 +84,8 @@ if (-not (Test-Path $profilePath)) { New-Item -Type File -Force $profilePath | O
 $aliasLines = @(
     ""
     "function termote {"
-    "    `$env:PATH += ';$backendDir'"
-    "    Set-Location '$backendDir'"
+    "    `$env:PATH += `";$backendDir`""
+    "    Set-Location `"$backendDir`""
     "    .\start.ps1"
     "}"
 )
