@@ -112,80 +112,80 @@ if (-not (Test-Path $shimDir)) {
     New-Item -Type Directory -Force $shimDir | Out-Null
 }
 
-$termotePs1Lines = @(
-    '# Smart termote launcher - VS Code style single instance'
-    '$backendDir = "$env:USERPROFILE\termote\backend"'
-    '$envFile = "$backendDir\.env"'
-    '$termoteDir = "$env:USERPROFILE\termote"'
-    ''
-    'function Send-IpcCommand($cmd) {'
-    '    try {'
-    '        $client = New-Object System.Net.Sockets.TcpClient'
-    '        $client.Connect("127.0.0.1", 9091)'
-    '        $stream = $client.GetStream()'
-    '        $writer = New-Object System.IO.StreamWriter($stream)'
-    '        $writer.WriteLine($cmd)'
-    '        $writer.Flush()'
-    '        $stream.Close()'
-    '        $client.Close()'
-    '        return $true'
-    '    } catch { return $false }'
-    '}'
-    ''
-    '$cwd = (Get-Location).Path'
-    ''
-    '# 1. Check if the process exists AT ALL (prevents race conditions during boot)'
-    '$termoteProc = Get-Process -Name "termote" -ErrorAction SilentlyContinue'
-    ''
-    'if ($termoteProc) {'
-    '    Write-Host "Termote is already running (or booting up). Waiting for it to be ready..." -ForegroundColor DarkGray'
-    ''
-    '    # Wait up to 15 seconds for the boot to finish and port 9090 to open'
-    '    $isReady = $false'
-    '    for ($i = 0; $i -lt 15; $i++) {'
-    '        try {'
-    '            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9090/health" -UseBasicParsing -TimeoutSec 1 -EA SilentlyContinue'
-    '            if ($resp.StatusCode -eq 200) { $isReady = $true; break }'
-    '        } catch { }'
-    '        Start-Sleep -Seconds 1'
-    '    }'
-    ''
-    '    if ($isReady) {'
-    '        Write-Host "Termote is ready. Opening new tab at: $cwd" -ForegroundColor Cyan'
-    '        $sent = Send-IpcCommand "open_dir:$cwd"'
-    ''
-    '        if ($sent) {'
-    '            # Open the browser to the existing session'
-    '            if (Test-Path $envFile) {'
-    '                $content = Get-Content $envFile -Raw'
-    "                `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }"
-    "                `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }"
-    '                if ($tunnelUrl -and $token -and $tunnelUrl -notmatch ''127\.0\.0\.1'') {'
-    '                    # First open raw tunnel URL to clear Cloudflare challenge, then open app'
-    '                    $httpsUrl = $tunnelUrl -replace ''^wss://'', ''https://'' -replace ''/ws$'', ''''
-    '                    Start-Process $httpsUrl'
-    '                    Start-Sleep -Seconds 2'
-    '                    $launchUrl = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($tunnelUrl))&token=$([Uri]::EscapeDataString($token))"'
-    '                    Start-Process $launchUrl'
-    '                }'
-    '            }'
-    '            exit 0'
-    '        } else {'
-    '            Write-Host "Failed to talk to existing Termote instance. It might be frozen." -ForegroundColor Red'
-    '        }'
-    '    } else {'
-    '        Write-Host "Existing Termote instance is hung and won''t respond. Restarting it..." -ForegroundColor Yellow'
-    '        Stop-Process -Name "termote" -Force -EA SilentlyContinue'
-    '        Stop-Process -Name "cloudflared" -Force -EA SilentlyContinue'
-    '        Start-Sleep -Seconds 1'
-    '    }'
-    '}'
-    ''
-    '# 2. If we get here, no instances are running. Start fresh!'
-    'Write-Host "Starting fresh Termote server..." -ForegroundColor Green'
-    '& "$termoteDir\start.ps1"'
-)
-Set-Content -Path "$shimDir\termote.ps1" -Value $termotePs1Lines -Encoding UTF8
+$termoteShimContent = @"
+# Smart termote launcher - VS Code style single instance
+\`$backendDir = "`$env:USERPROFILE\termote\backend"
+`$envFile = "`$backendDir\.env"
+`$termoteDir = "`$env:USERPROFILE\termote"
+
+function Send-IpcCommand(`$cmd) {
+    try {
+        `$client = New-Object System.Net.Sockets.TcpClient
+        `$client.Connect("127.0.0.1", 9091)
+        `$stream = `$client.GetStream()
+        `$writer = New-Object System.IO.StreamWriter(`$stream)
+        `$writer.WriteLine(`$cmd)
+        `$writer.Flush()
+        `$stream.Close()
+        `$client.Close()
+        return `$true
+    } catch { return `$false }
+}
+
+`$cwd = (Get-Location).Path
+
+# 1. Check if the process exists AT ALL (prevents race conditions during boot)
+`$termoteProc = Get-Process -Name "termote" -ErrorAction SilentlyContinue
+
+if (`$termoteProc) {
+    Write-Host "Termote is already running (or booting up). Waiting for it to be ready..." -ForegroundColor DarkGray
+
+    # Wait up to 15 seconds for the boot to finish and port 9090 to open
+    `$isReady = `$false
+    for (`$i = 0; `$i -lt 15; `$i++) {
+        try {
+            `$resp = Invoke-WebRequest -Uri "http://127.0.0.1:9090/health" -UseBasicParsing -TimeoutSec 1 -EA SilentlyContinue
+            if (`$resp.StatusCode -eq 200) { `$isReady = `$true; break }
+        } catch { }
+        Start-Sleep -Seconds 1
+    }
+
+    if (`$isReady) {
+        Write-Host "Termote is ready. Opening new tab at: `$cwd" -ForegroundColor Cyan
+        `$sent = Send-IpcCommand "open_dir:`$cwd"
+
+        if (`$sent) {
+            # Open the browser to the existing session
+            if (Test-Path `$envFile) {
+                `$content = Get-Content `$envFile -Raw
+                `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
+                `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
+                if (`$tunnelUrl -and `$token -and `$tunnelUrl -notmatch '127\.0\.0\.1') {
+                    # First open raw tunnel URL to clear Cloudflare challenge, then open app
+                    `$httpsUrl = "https://" + `$tunnelUrl.Substring(5)
+                    Start-Process `$httpsUrl
+                    Start-Sleep -Seconds 2
+                    `$launchUrl = "https://termote.vercel.app/?tunnel=$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=$(`[Uri]::EscapeDataString(`$token))"
+                    Start-Process `$launchUrl
+                }
+            }
+            exit 0
+        } else {
+            Write-Host "Failed to talk to existing Termote instance. It might be frozen." -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Existing Termote instance is hung and won't respond. Restarting it..." -ForegroundColor Yellow
+        Stop-Process -Name "termote" -Force -EA SilentlyContinue
+        Stop-Process -Name "cloudflared" -Force -EA SilentlyContinue
+        Start-Sleep -Seconds 1
+    }
+}
+
+# 2. If we get here, no instances are running. Start fresh!
+Write-Host "Starting fresh Termote server..." -ForegroundColor Green
+& "`$termoteDir\start.ps1"
+"@
+Set-Content -Path "$shimDir\termote.ps1" -Value $termoteShimContent -Encoding UTF8
 
 $cmdLines = @(
     "@echo off"
