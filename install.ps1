@@ -85,11 +85,11 @@ if (-not (Test-Path $profilePath)) {
     New-Item -Type File -Force $profilePath | Out-Null
 }
 
-# Build the termote function that adds backend dir to PATH (so cloudflared is found) then runs start.ps1
+# Build the termote function — here-string avoids all quote-escaping nightmares
 $termoteBlock = @"
 function termote {
-    `$env:Path += `";$backendDir`"
-    Set-Location '$backendDir'
+    `$env:PATH += ";$backendDir"
+    Set-Location "$backendDir"
     .\start.ps1
 }
 "@
