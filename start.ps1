@@ -63,9 +63,9 @@ if ($cloudflareUrl) {
     }
 }
 
-# Run compiled Rust server
+# Run compiled Rust server in background
 Set-Location $backendDir
-& "$backendDir\target\release\termote.exe"
+Start-Process -FilePath "$backendDir\target\release\termote.exe" -WindowStyle Hidden
 
 # Cleanup (only runs if termote exits)
 if ($process -and -not $process.HasExited) {
