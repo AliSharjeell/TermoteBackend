@@ -131,7 +131,7 @@ if (-not (Test-Path $shimDir)) {
 $termoteShimContent = @'
 # Smart termote launcher - VS Code style single instance
 $backendDir = "$env:USERPROFILE\termote\backend"
-$termoteDir = "$env:USERPROFILE\termote"
+$termoteDir = "$env:USERPROFILE\termote\backend"
 
 function Send-IpcCommand($cmd) {
     try {
@@ -322,3 +322,7 @@ Write-Host ""
 
 # Was: & "$termoteDir\backend\start.ps1"
 & "$installDir\backend\start.ps1"
+
+
+
+
