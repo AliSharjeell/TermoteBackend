@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$RepoUrl = "https://github.com/AliSharjeell/Termote.git",
     [string]$Branch = "master"
 )
@@ -6,9 +6,14 @@ param(
 $ErrorActionPreference = "Continue"
 
 Write-Host ""
-Write-Host "  TERMOTE" -ForegroundColor Cyan
+Write-Host "  ████████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗" -ForegroundColor Cyan
+Write-Host "  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝" -ForegroundColor Cyan
+Write-Host "     ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗  " -ForegroundColor Cyan
+Write-Host "     ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝  " -ForegroundColor Cyan
+Write-Host "     ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗" -ForegroundColor Cyan
+Write-Host "     ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Remote terminal accessible from any browser" -ForegroundColor Gray
+Write-Host "  Remote multiplexer pane terminal accessible from any browser" -ForegroundColor Gray
 Write-Host ""
 
 $installDir = "$env:USERPROFILE\termote"
