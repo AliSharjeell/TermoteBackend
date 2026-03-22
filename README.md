@@ -48,7 +48,7 @@ You are on a restrictive school or corporate Wi-Fi network that aggressively blo
 
 ---
 
-## ⚡ 60-Second Setup
+## 60-Second Setup
 
 1. Run the install command  
 2. Termote UI launches  
