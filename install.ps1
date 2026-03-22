@@ -144,7 +144,7 @@ $termotePs1Lines = @(
     '    $isReady = $false'
     '    for ($i = 0; $i -lt 15; $i++) {'
     '        try {'
-    '            $resp = Invoke-WebRequest -Uri "http://localhost:9090/health" -UseBasicParsing -TimeoutSec 1 -EA SilentlyContinue'
+    '            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9090/health" -UseBasicParsing -TimeoutSec 1 -EA SilentlyContinue'
     '            if ($resp.StatusCode -eq 200) { $isReady = $true; break }'
     '        } catch { }'
     '        Start-Sleep -Seconds 1'
