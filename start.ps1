@@ -1,6 +1,22 @@
 ﻿# Terminal Multiplexer Start Script
 # Generates auth token, starts Microsoft Dev Tunnel, and runs the backend
 
+Write-Host ""
+Write-Host "  ████████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗" -ForegroundColor Cyan
+Write-Host "  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝" -ForegroundColor Cyan
+Write-Host "     ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗  " -ForegroundColor Cyan
+Write-Host "     ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝  " -ForegroundColor Cyan
+Write-Host "     ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗" -ForegroundColor Cyan
+Write-Host "     ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Remote multiplexer pane terminal accessible from any browser" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Available commands:" -ForegroundColor White
+Write-Host "  - termote         : Start or connect to Termote" -ForegroundColor Cyan
+Write-Host "  - termote-kill    : Stop all Termote instances" -ForegroundColor Cyan
+Write-Host "  - Right-click in folder -> 'Open with Termote'" -ForegroundColor Cyan
+
+
 $backendDir = $PSScriptRoot
 
 # Generate a random 6-character alphanumeric token
