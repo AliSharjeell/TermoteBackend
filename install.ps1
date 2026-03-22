@@ -211,6 +211,50 @@ $killCmdLines = @(
 )
 Set-Content -Path "$shimDir\termote-kill.cmd" -Value $killCmdLines -Encoding ASCII
 
+# termote-link: Display tunnel URL, password, and Ctrl+clickable share link
+$linkLines = @(
+    '# Termote Link Display'
+    '$backendDir = "$env:USERPROFILE\termote\backend"'
+    '$envFile = "$backendDir\.env"'
+    ''
+    'if (-not (Test-Path $envFile)) {'
+    '    Write-Host "No .env file found. Is Termote running?" -ForegroundColor Red'
+    '    exit 1'
+    '}'
+    ''
+    '$content = Get-Content $envFile -Raw'
+    '$tunnelUrl = if ($content -match ''TUNNEL_URL=(.+)'') { $Matches[1].Trim() } else { $null }'
+    '$token = if ($content -match ''AUTH_TOKEN=(.+)'') { $Matches[1].Trim() } else { $null }'
+    ''
+    'if (-not $tunnelUrl -or -not $token) {'
+    '    Write-Host "Tunnel URL or token not found in .env." -ForegroundColor Red'
+    '    exit 1'
+    '}'
+    ''
+    '$shareLink = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($tunnelUrl))&token=$([Uri]::EscapeDataString($token))"'
+    '$wsLink = $tunnelUrl'
+    ''
+    '# OSC 8 hyperlink: ESC ] 8 ; ; URL ST'
+    '# Format: `e]8;;URL`e\TEXT`e]8;;`e\'
+    '$esc = "`e"'
+    '$hyperlink = "$esc]8;;$shareLink$esc\$esc]8;;$esc\"'
+    ''
+    'Write-Host ""'
+    'Write-Host "  Termote Connection Info" -ForegroundColor Cyan'
+    'Write-Host "  ─────────────────────" -ForegroundColor Cyan'
+    "Write-Host '  Tunnel (WSS): ' -NoNewline; Write-Host $tunnelUrl -ForegroundColor White'
+    "Write-Host '  Password:     ' -NoNewline; Write-Host $token -ForegroundColor White'
+    "Write-Host '  Share Link:   ' -NoNewline; Write-Host "${hyperlink}Open in Browser${esc}]8;;${esc}\" -ForegroundColor Green'
+    'Write-Host ""'
+)
+Set-Content -Path "$shimDir\termote-link.ps1" -Value $linkLines -Encoding UTF8
+
+$linkCmdLines = @(
+    "@echo off"
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`& '%~dp0termote-link.ps1'`""
+)
+Set-Content -Path "$shimDir\termote-link.cmd" -Value $linkCmdLines -Encoding ASCII
+
 # Add shimDir to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($userPath -notlike "*$shimDir*") {
@@ -265,7 +309,8 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "  Available commands:" -ForegroundColor White
 Write-Host "  - termote         : Start or connect to Termote" -ForegroundColor Cyan
-Write-Host "  - termote-kill    : Stop all Termote instances" -ForegroundColor Cyan
+Write-Host "  - termote-kill   : Stop all Termote instances" -ForegroundColor Cyan
+Write-Host "  - termote-link   : Show tunnel URL, password & share link" -ForegroundColor Cyan
 Write-Host "  - Right-click in folder -> 'Open with Termote'" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  If commands not found in new terminal, run:" -ForegroundColor Yellow
