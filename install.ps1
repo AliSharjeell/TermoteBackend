@@ -6,12 +6,7 @@ param(
 $ErrorActionPreference = "Continue"
 
 Write-Host ""
-Write-Host "  ████████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗" -ForegroundColor Cyan
-Write-Host "  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝" -ForegroundColor Cyan
-Write-Host "     ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗  " -ForegroundColor Cyan
-Write-Host "     ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝  " -ForegroundColor Cyan
-Write-Host "     ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗" -ForegroundColor Cyan
-Write-Host "     ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝" -ForegroundColor Cyan
+Write-Host "  TERMOTE" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Remote terminal accessible from any browser" -ForegroundColor Gray
 Write-Host ""
@@ -49,6 +44,12 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 # 3. Download cloudflared into the backend folder
 $backendDir = "$installDir\backend"
 $cloudflaredPath = "$backendDir\cloudflared.exe"
+
+# Ensure backend directory exists
+if (-not (Test-Path $backendDir)) {
+    New-Item -Type Directory -Force $backendDir | Out-Null
+}
+
 if (-not (Test-Path $cloudflaredPath)) {
     Write-Host "[3/6] Downloading Cloudflared tunnel client..." -ForegroundColor Yellow
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -73,38 +74,31 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Backend compiled successfully!" -ForegroundColor Green
 
-# 5. Create the global 'termote' PowerShell command
-Write-Host "[5/6] Setting up global 'termote' command..." -ForegroundColor Yellow
+# 5. Create a termote.ps1 shim in a permanent location
+Write-Host "[5/6] Setting up global termote command..." -ForegroundColor Yellow
 
-$profilePath = if ($PROFILE) { $PROFILE } else { "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1" }
+$shimDir = "$env:USERPROFILE\.termote-bin"
+if (-not (Test-Path $shimDir)) { New-Item -Type Directory -Force $shimDir | Out-Null }
 
-if (-not (Test-Path (Split-Path $profilePath))) { New-Item -Type Directory -Force (Split-Path $profilePath) | Out-Null }
-if (-not (Test-Path $profilePath)) { New-Item -Type File -Force $profilePath | Out-Null }
+# Write a shim script that calls start.ps1
+$shimPath = "$shimDir\termote.ps1"
+Set-Content -Path $shimPath -Value "& `"$installDir\start.ps1`""
 
-# The safest, most parser-proof way to build the function block
-$line1 = "function termote {"
-$line2 = "    `$env:PATH += `";$backendDir`""
-$line3 = "    Set-Location `"$backendDir`""
-$line4 = "    .\start.ps1"
-$line5 = "}"
-
-$existingProfile = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
-if ($null -eq $existingProfile -or $existingProfile -notmatch "function termote") {
-    Add-Content -Path $profilePath -Value ""
-    Add-Content -Path $profilePath -Value $line1
-    Add-Content -Path $profilePath -Value $line2
-    Add-Content -Path $profilePath -Value $line3
-    Add-Content -Path $profilePath -Value $line4
-    Add-Content -Path $profilePath -Value $line5
+# Add shimDir to permanent user PATH if not already there
+$userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ($userPath -notlike "*$shimDir*") {
+    [Environment]::SetEnvironmentVariable("PATH", "$userPath;$shimDir", "User")
+    Write-Host "  Added to PATH permanently." -ForegroundColor Green
 }
 
-Write-Host "  Added 'termote' function to your PowerShell profile." -ForegroundColor Green
+# Load it into current session too
+$env:PATH += ";$shimDir"
+
+Write-Host "  Global termote command installed." -ForegroundColor Green
 Write-Host "[6/6] Starting Termote server..." -ForegroundColor Yellow
 
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  Installation complete! Starting server now..." -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Cyan
 
-# Reload profile and start
-. $profilePath
-termote
+& "$installDir\start.ps1"
