@@ -11,7 +11,7 @@
 ```
 **Your local CLI, anywhere.**
 
-A zero-setup, multi-pane remote terminal that turns any web browser into a powerful command center for your PC.
+Turn any browser into a full-powered, multi-pane terminal for your PC — instantly. No SSH, no tmux, no setup.
 
 **Access the Web Client:** [termote.vercel.app](https://termote.vercel.app)
 
@@ -25,10 +25,10 @@ Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punchin
 | Feature | Description |
 |---------|-------------|
 | **Anywhere, Any Network** | Ditch the VPNs and port forwarding. Termote securely punches through NATs and firewalls, giving you instant access to your machine whether you are on the same Wi-Fi or halfway across the world. |
-| **Infinite Multiplexing** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
+| **Multi-Pane Terminal (Like tmux, but visual)** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
 | **Smart Single-Instance** | Already have Termote running? Typing `termote` in a new local folder or clicking "Open with Termote" won't spawn a redundant server. It intelligently connects to your active session and opens a new pane for that directory. |
 | **Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. If a device has a web browser, it is now a fully functional command center with a beautiful, responsive UI. |
-| **Native Local Execution** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
+| **Runs directly on your PC (no cloud, no lag)** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
 
 ---
 
@@ -86,6 +86,21 @@ After installation, the following commands are available in your terminal:
 | Right-click in folder → **"Open with Termote"** | Instantly opens a new terminal pane for that specific folder in your existing web UI. |
 
 ---
+
+## Why not SSH?
+
+- No port forwarding
+- No VPN setup
+- Works on restricted networks (port 443)
+- Browser-based UI (mobile friendly)
+- Multi-pane built-in (no tmux needed)
+
+## Security
+
+- End-to-end encrypted via HTTPS/WebSockets
+- Auth required (Microsoft Dev Tunnels)
+- No command logging or data storage
+- Runs locally on your machine
 
 ## Reporting Issues
 
