@@ -53,7 +53,7 @@ You are on a restrictive school or corporate Wi-Fi network that aggressively blo
 1. Run the install command  
 2. Termote UI launches  
 3. You can scan the QR for your phone or copy link for other devices
-4. Your PC terminal is now anywhere
+4. 4. You now control your PC Terminal from anywhere
 
 ## Installation
 
