@@ -1,4 +1,4 @@
-<div align="center">
+
 ```
 ███████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗
 ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝
@@ -7,6 +7,7 @@
    ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗
    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝
 ```
+<div align="center">
 **Your local CLI, anywhere.**
 
 A zero-setup, multi-pane remote terminal that turns any web browser into a powerful command center for your PC.
