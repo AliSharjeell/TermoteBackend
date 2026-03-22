@@ -35,12 +35,12 @@ if (-not (Test-Path $installDir)) {
 
     # Sync updated scripts and binary from repo to installed location
     # $PSScriptRoot is the repo on disk (has our edits), $backendDir is the target install
-    Write-Host "  Syncing updated files to installed location..." -ForegroundColor Gray
+   Write-Host "  Syncing updated files to installed location..." -ForegroundColor Gray
     Copy-Item -Path "$PSScriptRoot\start.ps1" -Destination "$backendDir\start.ps1" -Force
     Copy-Item -Path "$PSScriptRoot\install.ps1" -Destination "$backendDir\install.ps1" -Force
-    if (Test-Path "$PSScriptRoot\target\release\termote.exe") {
-        Copy-Item -Path "$PSScriptRoot\target\release\termote.exe" -Destination "$backendDir\target\release\termote.exe" -Force
-    }
+    # Delete old root-level stale files
+    Remove-Item "$installDir\start.ps1" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$installDir\install.ps1" -Force -ErrorAction SilentlyContinue
 }
 
 # 2. Install Rust if not present
@@ -107,6 +107,19 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "  Backend compiled successfully!" -ForegroundColor Green
+
+# Kill running termote so we can overwrite the exe
+Stop-Process -Name "termote" -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
+# Copy freshly compiled binary to installed location
+$targetDir = "$backendDir\target\release"
+if (-not (Test-Path $targetDir)) {
+    New-Item -Type Directory -Force $targetDir | Out-Null
+}
+Copy-Item -Path "$PSScriptRoot\target\release\termote.exe" `
+          -Destination "$targetDir\termote.exe" -Force
+Write-Host "  Binary synced to installed location." -ForegroundColor Green
 
 # 5. Create shim directory and files
 Write-Host "[6/8] Setting up termote commands..." -ForegroundColor Yellow
@@ -269,4 +282,5 @@ Write-Host "  If commands not found in new terminal, run:" -ForegroundColor Yell
 Write-Host '    $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")' -ForegroundColor Gray
 Write-Host ""
 
-& "$installDir\start.ps1"
+# Was: & "$termoteDir\backend\start.ps1"
+& "$installDir\backend\start.ps1"
