@@ -73,6 +73,11 @@ if ($cloudflareUrl) {
 Set-Location $backendDir
 Start-Process -FilePath "$backendDir\target\release\termote.exe" -WindowStyle Hidden
 
+Write-Host ""
+Write-Host "  If 'termote' command not found in terminal, run:" -ForegroundColor Yellow
+Write-Host '    $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")' -ForegroundColor Gray
+Write-Host ""
+
 # Cleanup (only runs if termote exits)
 if ($process -and -not $process.HasExited) {
     Stop-Process $process.Id -Force -ErrorAction SilentlyContinue

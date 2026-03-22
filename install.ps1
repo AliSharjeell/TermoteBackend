@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$RepoUrl = "https://github.com/AliSharjeell/Termote.git",
     [string]$Branch = "master"
 )
@@ -39,7 +39,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     Write-Host "[2/7] Installing Rust (first-time only, ~2 min)..." -ForegroundColor Yellow
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -Uri "https://win.rustup.rs" -OutFile "$env:TEMP\rustup-init.exe"
-    & "$env:TEMP\rustup-init.exe" -y -q --default-toolware stable
+    & "$env:TEMP\rustup-init.exe" -y -q --default-toolchain stable
     Remove-Item "$env:TEMP\rustup-init.exe" -Force -ErrorAction SilentlyContinue
     $env:Path += ";$env:USERPROFILE\.cargo\bin"
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User") + ";" + [System.Environment]::GetEnvironmentVariable("Path","Machine")
@@ -105,95 +105,99 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Backend compiled successfully!" -ForegroundColor Green
 
-# 5. Create shim directory and files
+# 5. Create shim directory and files (100% Parser-Proof Arrays)
 Write-Host "[5/7] Setting up termote commands..." -ForegroundColor Yellow
 
 if (-not (Test-Path $shimDir)) {
     New-Item -Type Directory -Force $shimDir | Out-Null
 }
 
-# termote.ps1 - Smart launcher (VS Code style single instance)
-$termotePs1 = @"
-# Smart termote launcher - VS Code style single instance
-`$backendDir = "`$env:USERPROFILE\termote\backend"
-`$envFile = "`$backendDir\.env"
-`$termoteDir = "`$env:USERPROFILE\termote"
+$termotePs1Lines = @(
+    '# Smart termote launcher - VS Code style single instance'
+    '$backendDir = "$env:USERPROFILE\termote\backend"'
+    '$envFile = "$backendDir\.env"'
+    '$termoteDir = "$env:USERPROFILE\termote"'
+    ''
+    'function Send-IpcCommand($cmd) {'
+    '    try {'
+    '        $client = New-Object System.Net.Sockets.TcpClient'
+    '        $client.Connect("127.0.0.1", 9091)'
+    '        $stream = $client.GetStream()'
+    '        $writer = New-Object System.IO.StreamWriter($stream)'
+    '        $writer.WriteLine($cmd)'
+    '        $writer.Flush()'
+    '        $stream.Close()'
+    '        $client.Close()'
+    '        return $true'
+    '    } catch { return $false }'
+    '}'
+    ''
+    '$cwd = (Get-Location).Path'
+    ''
+    '$isRunning = $false'
+    'try {'
+    '    $resp = Invoke-WebRequest -Uri "http://localhost:9090/health" -TimeoutSec 1 -EA SilentlyContinue'
+    '    if ($resp.StatusCode -eq 200) { $isRunning = $true }'
+    '} catch { $isRunning = $false }'
+    ''
+    'if ($isRunning) {'
+    '    Write-Host "Termote running. Opening new tab at: $cwd" -ForegroundColor Cyan'
+    '    $sent = Send-IpcCommand "open_dir:$cwd"'
+    '    if ($sent) {'
+    '        if (Test-Path $envFile) {'
+    '            $content = Get-Content $envFile -Raw'
+    "            `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }"
+    "            `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }"
+    '            if ($tunnelUrl -and $token) {'
+    '                $launchUrl = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($tunnelUrl))&token=$([Uri]::EscapeDataString($token))"'
+    '                Start-Process $launchUrl'
+    '            }'
+    '        }'
+    '        exit 0'
+    '    }'
+    '    if (Test-Path $envFile) {'
+    '        $content = Get-Content $envFile -Raw'
+    "        `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }"
+    "        `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }"
+    "        if (`$tunnelUrl -and `$token -and `$tunnelUrl -notmatch '127\.0\.0\.1') {"
+    '            $launchUrl = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($tunnelUrl))&token=$([Uri]::EscapeDataString($token))"'
+    '            Start-Process $launchUrl'
+    '            exit 0'
+    '        }'
+    '    }'
+    '    Write-Host "Old instance detected. Restarting..." -ForegroundColor Yellow'
+    '    Stop-Process -Name "termote" -Force -EA SilentlyContinue'
+    '    Stop-Process -Name "cloudflared" -Force -EA SilentlyContinue'
+    '    Start-Sleep -Milliseconds 500'
+    '}'
+    ''
+    'Write-Host "Starting Termote server..." -ForegroundColor Green'
+    '& "$termoteDir\start.ps1"'
+)
+Set-Content -Path "$shimDir\termote.ps1" -Value $termotePs1Lines -Encoding UTF8
 
-function Send-IpcCommand(`$cmd) {
-    try {
-        `$client = New-Object System.Net.Sockets.TcpClient
-        `$client.Connect("127.0.0.1", 9091)
-        `$stream = `$client.GetStream()
-        `$writer = New-Object System.IO.StreamWriter(`$stream)
-        `$writer.WriteLine(`$cmd)
-        `$writer.Flush()
-        `$stream.Close()
-        `$client.Close()
-        return `$true
-    } catch { return `$false }
-}
+$cmdLines = @(
+    "@echo off"
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`& '%~dp0termote.ps1' %*`""
+)
+Set-Content -Path "$shimDir\termote.cmd" -Value $cmdLines -Encoding ASCII
 
-`$cwd = (Get-Location).Path
+$killLines = @(
+    '# Termote Kill Script'
+    'Write-Host "Stopping Termote..." -ForegroundColor Yellow'
+    'Get-Process -Name "termote" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
+    'Get-Process -Name "cloudflared" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
+    'Get-NetTCPConnection -LocalPort 9090 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }'
+    'Get-NetTCPConnection -LocalPort 9091 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }'
+    'Write-Host "All Termote instances stopped." -ForegroundColor Green'
+)
+Set-Content -Path "$shimDir\termote-kill.ps1" -Value $killLines -Encoding UTF8
 
-`$isRunning = `$false
-try {
-    `$resp = Invoke-WebRequest -Uri "http://localhost:9090/health" -TimeoutSec 1 -EA SilentlyContinue
-    if (`$resp.StatusCode -eq 200) { `$isRunning = `$true }
-} catch { `$isRunning = `$false }
-
-if (`$isRunning) {
-    Write-Host "Termote running. Opening new tab at: `$cwd" -ForegroundColor Cyan
-    `$sent = Send-IpcCommand "open_dir:`$cwd"
-    if (`$sent) {
-        if (Test-Path `$envFile) {
-            `$content = Get-Content `$envFile -Raw
-            `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
-            `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
-            if (`$tunnelUrl -and `$token) {
-                `$launchUrl = "https://termote.vercel.app/?tunnel=`$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=`$(`[Uri]::EscapeDataString(`$token))"
-                Start-Process `$launchUrl
-            }
-        }
-        exit 0
-    }
-    if (Test-Path `$envFile) {
-        `$content = Get-Content `$envFile -Raw
-        `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
-        `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
-        if (`$tunnelUrl -and `$token -and `$tunnelUrl -notmatch '127\.0\.0\.1') {
-            `$launchUrl = "https://termote.vercel.app/?tunnel=`$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=`$(`[Uri]::EscapeDataString(`$token))"
-            Start-Process `$launchUrl
-            exit 0
-        }
-    }
-    Write-Host "Old instance detected. Restarting..." -ForegroundColor Yellow
-    Stop-Process -Name "termote" -Force -EA SilentlyContinue
-    Stop-Process -Name "cloudflared" -Force -EA SilentlyContinue
-    Start-Sleep -Milliseconds 500
-}
-
-Write-Host "Starting Termote server..." -ForegroundColor Green
-& "`$termoteDir\start.ps1"
-"@
-Set-Content -Path "$shimDir\termote.ps1" -Value $termotePs1 -Encoding UTF8
-
-# termote.cmd - Windows wrapper
-Set-Content -Path "$shimDir\termote.cmd" -Value "@echo off`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote.ps1' %*`"" -Encoding ASCII
-
-# termote-kill.ps1 - Kill all instances
-$termoteKill = @"
-# Termote Kill Script - stops all termote instances
-Write-Host "Stopping Termote..." -ForegroundColor Yellow
-Get-Process -Name "termote" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
-Get-Process -Name "cloudflared" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
-Get-NetTCPConnection -LocalPort 9090 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id `$_.OwningProcess -Force -EA SilentlyContinue }
-Get-NetTCPConnection -LocalPort 9091 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id `$_.OwningProcess -Force -EA SilentlyContinue }
-Write-Host "All Termote instances stopped." -ForegroundColor Green
-"@
-Set-Content -Path "$shimDir\termote-kill.ps1" -Value $termoteKill -Encoding UTF8
-
-# termote-kill.cmd - Windows wrapper
-Set-Content -Path "$shimDir\termote-kill.cmd" -Value "@echo off`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote-kill.ps1'`"" -Encoding ASCII
+$killCmdLines = @(
+    "@echo off"
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`& '%~dp0termote-kill.ps1'`""
+)
+Set-Content -Path "$shimDir\termote-kill.cmd" -Value $killCmdLines -Encoding ASCII
 
 # Add shimDir to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
@@ -208,11 +212,11 @@ Write-Host "  Commands installed." -ForegroundColor Green
 Write-Host "[6/7] Adding Windows Explorer context menu..." -ForegroundColor Yellow
 
 $termoteFileHandler = "$shimDir\termote-file.ps1"
-$handlerContent = @"
-`$dir = Split-Path -Parent `$args[0]
-Start-Process powershell -ArgumentList "-NoExit","-Command","Set-Location `$dir; termote" -WindowStyle Normal
-"@
-Set-Content -Path $termoteFileHandler -Value $handlerContent -Encoding UTF8
+$handlerLines = @(
+    '$dir = Split-Path -Parent $args[0]'
+    'Start-Process powershell -ArgumentList "-NoExit","-Command","Set-Location $dir; termote" -WindowStyle Normal'
+)
+Set-Content -Path $termoteFileHandler -Value $handlerLines -Encoding UTF8
 
 # Folder background (right-click in empty space)
 $regPath = "HKCU:\Software\Classes\Directory\Background\shell\Termote"
@@ -247,7 +251,8 @@ Write-Host "  - termote         : Start or connect to Termote" -ForegroundColor 
 Write-Host "  - termote-kill    : Stop all Termote instances" -ForegroundColor Cyan
 Write-Host "  - Right-click in folder -> 'Open with Termote'" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Type 'termote' in any terminal to start!" -ForegroundColor Gray
+Write-Host "  If commands not found in new terminal, run:" -ForegroundColor Yellow
+Write-Host '    $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")' -ForegroundColor Gray
 Write-Host ""
 
 & "$installDir\start.ps1"
