@@ -210,6 +210,42 @@ $cmdPath = "$shimDir\termote.cmd"
 $cmdContent = "@echo off`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote.ps1' %*`""
 Set-Content -Path $cmdPath -Value $cmdContent -Encoding ASCII
 
+# Create termote-kill.ps1 and termote-kill.cmd
+$killPs1Content = @"
+# Termote Kill Script - stops all termote instances, ports, and tunnels
+Write-Host "Stopping Termote..." -ForegroundColor Yellow
+
+`$termoteProcesses = Get-Process -Name "termote" -EA SilentlyContinue
+if (`$termoteProcesses) {
+    `$termoteProcesses | ForEach-Object {
+        Write-Host "Stopping termote (PID: `$(`$_.Id))..." -ForegroundColor Cyan
+        Stop-Process -Id `$_.Id -Force -EA SilentlyContinue
+    }
+}
+`$cloudflareProcesses = Get-Process -Name "cloudflared" -EA SilentlyContinue
+if (`$cloudflareProcesses) {
+    `$cloudflareProcesses | ForEach-Object {
+        Write-Host "Stopping cloudflared (PID: `$(`$_.Id))..." -ForegroundColor Cyan
+        Stop-Process -Id `$_.Id -Force -EA SilentlyContinue
+    }
+}
+`$port9090 = Get-NetTCPConnection -LocalPort 9090 -EA SilentlyContinue
+if (`$port9090) {
+    `$port9090 | ForEach-Object {
+        Stop-Process -Id `$_.OwningProcess -Force -EA SilentlyContinue
+    }
+}
+`$port9091 = Get-NetTCPConnection -LocalPort 9091 -EA SilentlyContinue
+if (`$port9091) {
+    `$port9091 | ForEach-Object {
+        Stop-Process -Id `$_.OwningProcess -Force -EA SilentlyContinue
+    }
+}
+Write-Host "All Termote instances stopped." -ForegroundColor Green
+"@
+Set-Content -Path "$shimDir\termote-kill.ps1" -Value $killPs1Content -Encoding UTF8
+Set-Content -Path "$shimDir\termote-kill.cmd" -Value "@echo off`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote-kill.ps1'`"" -Encoding ASCII
+
 # Add shimDir to permanent user PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($userPath -notlike "*$shimDir*") {
