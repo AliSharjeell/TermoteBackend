@@ -76,41 +76,35 @@ Write-Host "  Backend compiled successfully!" -ForegroundColor Green
 
 # 5. Create the global 'termote' PowerShell command
 Write-Host "[5/6] Setting up global 'termote' command..." -ForegroundColor Yellow
-$profilePath = $PROFILE
-$profileDir = Split-Path $profilePath
-if (-not (Test-Path $profileDir)) {
-    New-Item -Type Directory -Force $profileDir | Out-Null
-}
-if (-not (Test-Path $profilePath)) {
-    New-Item -Type File -Force $profilePath | Out-Null
-}
 
-# Build the termote function — here-string avoids all quote-escaping nightmares
-$termoteBlock = @"
+# Safely resolve profile path even if $PROFILE is null
+$profilePath = if ($PROFILE) { $PROFILE } else { "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1" }
+
+if (-not (Test-Path (Split-Path $profilePath))) { New-Item -Type Directory -Force (Split-Path $profilePath) | Out-Null }
+if (-not (Test-Path $profilePath)) { New-Item -Type File -Force $profilePath | Out-Null }
+
+# Use single quotes inside the here-string to avoid double-quote escaping nightmares
+$termoteAlias = @"
+
 function termote {
-    `$env:PATH += ";$backendDir"
-    Set-Location "$backendDir"
+    `$env:PATH += ';$backendDir'
+    Set-Location '$backendDir'
     .\start.ps1
 }
 "@
 
-# Only add if not already present
 $existingProfile = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
-if ($existingProfile -notmatch "function termote") {
-    Add-Content $profilePath "`n$termoteBlock"
-    Write-Host "  Added 'termote' function to your PowerShell profile." -ForegroundColor Green
-} else {
-    Write-Host "  'termote' command already in profile, skipping." -ForegroundColor Gray
+if ($null -eq $existingProfile -or $existingProfile -notmatch "function termote") {
+    Add-Content -Path $profilePath -Value "`n$termoteAlias"
 }
 
-# 6. Start the server
+Write-Host "  Added 'termote' function to your PowerShell profile." -ForegroundColor Green
 Write-Host "[6/6] Starting Termote server..." -ForegroundColor Yellow
-Write-Host ""
+
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  Installation complete! Starting server now..." -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
 
-# Reload profile so termote function is available, then run it
+# Reload profile and start
 . $profilePath
 termote
