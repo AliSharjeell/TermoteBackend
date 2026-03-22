@@ -6,23 +6,17 @@ param(
 $ErrorActionPreference = "Continue"
 
 Write-Host ""
-Write-Host "  ████████╗██╗  ██╗███████╗" -ForegroundColor Cyan
-Write-Host "  ╚══██╔══╝██║  ██║██╔════╝" -ForegroundColor Cyan
-Write-Host "     ██║   ███████║█████╗" -ForegroundColor Cyan
-Write-Host "     ██║   ██╔══██║██╔══╝" -ForegroundColor Cyan
-Write-Host "     ██║   ██║  ██║███████╗" -ForegroundColor Cyan
-Write-Host "     ╚═╝   ╚═╝  ╚═╝╚══════╝" -ForegroundColor Cyan
-Write-Host "  ███████╗██╗███╗   ███╗██████╗ ██╗     ███████╗" -ForegroundColor Cyan
-Write-Host "  ██╔════╝██║████╗ ████║██╔══██╗██║     ██╔════╝" -ForegroundColor Cyan
-Write-Host "  ███████╗██║██╔████╔██║██████╔╝██║     █████╗" -ForegroundColor Cyan
-Write-Host "  ╚════██║██║██║╚██╔╝██║██╔═══╝ ██║     ██╔══╝" -ForegroundColor Cyan
-Write-Host "  ███████║██║██║ ╚═╝ ██║██║     ███████╗███████╗" -ForegroundColor Cyan
-Write-Host "  ╚══════╝╚═╝╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝" -ForegroundColor Cyan
+Write-Host "  ████████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗" -ForegroundColor Cyan
+Write-Host "  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝" -ForegroundColor Cyan
+Write-Host "     ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗  " -ForegroundColor Cyan
+Write-Host "     ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝  " -ForegroundColor Cyan
+Write-Host "     ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗" -ForegroundColor Cyan
+Write-Host "     ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Remote terminal accessible from any browser" -ForegroundColor Gray
 Write-Host ""
 
-$installDir = "$env:USERPROFILE\termote-app"
+$installDir = "$env:USERPROFILE\termote"
 
 # 1. Clone or update the repo
 if (-not (Test-Path $installDir)) {
