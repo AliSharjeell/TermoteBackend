@@ -84,6 +84,7 @@ if (-not (Test-Path (Split-Path $profilePath))) { New-Item -Type Directory -Forc
 if (-not (Test-Path $profilePath)) { New-Item -Type File -Force $profilePath | Out-Null }
 
 # Use single quotes inside the here-string to avoid double-quote escaping nightmares
+# NOTE: closing "@ must have ZERO leading whitespace — PowerShell requires this
 $termoteAlias = @"
 
 function termote {
