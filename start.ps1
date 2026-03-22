@@ -1,4 +1,5 @@
 # Terminal Multiplexer Start Script
+. $PROFILE
 # Generates auth token, starts cloudflared tunnel, and runs the backend
 
 # Generate a random 6-character alphanumeric token
@@ -51,6 +52,8 @@ if ($cloudflareUrl) {
     $wsUrl = $cloudflareUrl -replace '^https://', 'wss://'
     $env:TUNNEL_URL = $wsUrl
     Write-Host "WebSocket endpoint: $wsUrl/ws" -ForegroundColor Cyan
+    # Write to .env so backend picks it up reliably
+    Set-Content -Path "$PSScriptRoot\.env" -Value "AUTH_TOKEN=$token`nTUNNEL_URL=$wsUrl" -Encoding UTF8
 } else {
     Write-Host "Warning: Could not determine tunnel URL" -ForegroundColor Yellow
     if (Test-Path $tunnelLog) {
