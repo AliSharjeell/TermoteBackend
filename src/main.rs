@@ -130,17 +130,9 @@ async fn main() {
     let encoded_token = urlencoding::encode(&auth_token);
     let launch_url = format!("{}/?tunnel={}&token={}", frontend_url, encoded_tunnel, encoded_token);
 
-    // Open browser after server starts
-    info!("Opening browser at: {}", launch_url);
-    tokio::spawn(async move {
-        // Small delay to ensure server is ready
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        if let Err(e) = open::that(&launch_url) {
-            tracing::warn!("Failed to open browser: {}. You can manually visit: {}", e, launch_url);
-        } else {
-            info!("Browser opened successfully");
-        }
-    });
+    // Don't auto-open browser — the termote shim handles opening the browser
+    // when connecting to an existing session. Fresh starts show the URL in terminal.
+    info!("Launch URL (for manual open): {}", launch_url);
 
     // Start server
     let listener = tokio::net::TcpListener::bind(addr).await
