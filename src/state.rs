@@ -264,10 +264,11 @@ impl AppState {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         // Send cd command to the pane
+        // Windows needs \r\n (carriage return + newline) to execute the command
         #[cfg(windows)]
-        let cd_cmd = format!("cd '{}'; Clear-Host\n", dir.replace("'", "''"));
+        let cd_cmd = format!("cd '{}'; Clear-Host\r\n", dir.replace("'", "''"));
         #[cfg(not(windows))]
-        let cd_cmd = format!("cd '{}'; clear\n", dir.replace("'", "\\'"));
+        let cd_cmd = format!("cd '{}'; clear\r\n", dir.replace("'", "\\'"));
 
         if let Err(e) = self.pty_manager.write_input_raw(&pane_id, &cd_cmd) {
             tracing::error!("Failed to cd to directory {}: {}", dir, e);
