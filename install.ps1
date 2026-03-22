@@ -150,7 +150,7 @@ function Send-IpcCommand(`$cmd) {
 # Get current directory
 `$cwd = (Get-Location).Path
 
-# Check if termote is already running
+# Check if termote is already running on port 9090
 `$isRunning = `$false
 try {
     `$resp = Invoke-WebRequest -Uri "http://localhost:9090/health" -TimeoutSec 1 -EA SilentlyContinue
@@ -159,6 +159,8 @@ try {
 
 if (`$isRunning) {
     Write-Host "Termote is running. Opening new tab at: `$cwd" -ForegroundColor Cyan
+
+    # Try IPC first (new instances have IPC server)
     `$sent = Send-IpcCommand "open_dir:`$cwd"
     if (`$sent) {
         # Open browser to existing session
@@ -172,9 +174,29 @@ if (`$isRunning) {
             }
         }
         exit 0
-    } else {
-        Write-Host "IPC failed, starting new instance..." -ForegroundColor Yellow
     }
+
+    # IPC failed - old instance without IPC server
+    # Check if we have valid tunnel URL in .env
+    if (Test-Path `$envFile) {
+        `$content = Get-Content `$envFile -Raw
+        `$tunnelUrl = if (`$content -match 'TUNNEL_URL=(.+)') { `$Matches[1].Trim() } else { `$null }
+        `$token = if (`$content -match 'AUTH_TOKEN=(.+)') { `$Matches[1].Trim() } else { `$null }
+
+        if (`$tunnelUrl -and `$token -and `$tunnelUrl -notmatch '127\.0\.0\.1') {
+            # We have a valid tunnel URL - just open browser
+            `$launchUrl = "https://termote.vercel.app/?tunnel=`$(`[Uri]::EscapeDataString(`$tunnelUrl))&token=`$(`[Uri]::EscapeDataString(`$token))"
+            Write-Host "Opening existing session..." -ForegroundColor Cyan
+            Start-Process `$launchUrl
+            exit 0
+        }
+    }
+
+    # No valid session or old instance - kill and restart
+    Write-Host "Old instance detected. Restarting..." -ForegroundColor Yellow
+    Stop-Process -Name "termote" -Force -ErrorAction SilentlyContinue
+    Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
 }
 
 # Start termote
