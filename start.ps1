@@ -8,12 +8,18 @@ $env:AUTH_TOKEN = -join ((97..122) + (48..57) | Get-Random -Count 6 | ForEach-Ob
 $token = $env:AUTH_TOKEN
 Write-Host "Auth Token: $token" -ForegroundColor Green
 
-# Check if cloudflared.exe exists locally
+# Check if cloudflared.exe exists locally, or fall back to global
 $cloudflaredExe = "$backendDir\cloudflared.exe"
 if (-not (Test-Path $cloudflaredExe)) {
-    Write-Host "cloudflared not found at $cloudflaredExe" -ForegroundColor Red
-    Write-Host "Download from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/install-and-setup/tunnel-guide/local/" -ForegroundColor Yellow
-    exit 1
+    $globalCloudflared = Get-Command cloudflared -ErrorAction SilentlyContinue
+    if ($globalCloudflared) {
+        $cloudflaredExe = $globalCloudflared.Source
+        Write-Host "Using global cloudflared: $cloudflaredExe" -ForegroundColor Cyan
+    } else {
+        Write-Host "cloudflared not found at $cloudflaredExe" -ForegroundColor Red
+        Write-Host "Download from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/install-and-setup/tunnel-guide/local/" -ForegroundColor Yellow
+        exit 1
+    }
 }
 
 # Temp log file
