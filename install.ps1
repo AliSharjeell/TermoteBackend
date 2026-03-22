@@ -131,7 +131,6 @@ if (-not (Test-Path $shimDir)) {
 $termoteShimContent = @'
 # Smart termote launcher - VS Code style single instance
 $backendDir = "$env:USERPROFILE\termote\backend"
-$envFile = "$backendDir\.env"
 $termoteDir = "$env:USERPROFILE\termote"
 
 function Send-IpcCommand($cmd) {
@@ -167,24 +166,10 @@ if ($termoteProc) {
     }
 
     if ($isReady) {
-        Write-Host "Termote is ready. Opening new tab at: $cwd" -ForegroundColor Cyan
+        Write-Host "Termote is ready. Sending open_dir IPC..." -ForegroundColor Cyan
         $sent = Send-IpcCommand "open_dir:$cwd"
-
         if ($sent) {
-            # Open the browser to the existing session
-            if (Test-Path $envFile) {
-                $content = Get-Content $envFile -Raw
-                $tunnelUrl = if ($content -match 'TUNNEL_URL=(.+)') { $Matches[1].Trim() } else { $null }
-                $token = if ($content -match 'AUTH_TOKEN=(.+)') { $Matches[1].Trim() } else { $null }
-                if ($tunnelUrl -and $token -and $tunnelUrl -notmatch '127\.0\.0\.1') {
-                    # First open raw tunnel URL, then open app
-                    $httpsUrl = "https://" + $tunnelUrl.Substring(5)
-                    Start-Process $httpsUrl
-                    Start-Sleep -Seconds 2
-                    $launchUrl = "https://termote.vercel.app/?tunnel=$([Uri]::EscapeDataString($tunnelUrl))&token=$([Uri]::EscapeDataString($token))"
-                    Start-Process $launchUrl
-                }
-            }
+            Write-Host "New pane opened at: $cwd" -ForegroundColor Green
             exit 0
         } else {
             Write-Host "Failed to talk to existing Termote instance. It might be frozen." -ForegroundColor Red
