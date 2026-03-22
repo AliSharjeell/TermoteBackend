@@ -77,26 +77,24 @@ Write-Host "  Backend compiled successfully!" -ForegroundColor Green
 # 5. Create the global 'termote' PowerShell command
 Write-Host "[5/6] Setting up global 'termote' command..." -ForegroundColor Yellow
 
-# Safely resolve profile path even if $PROFILE is null
 $profilePath = if ($PROFILE) { $PROFILE } else { "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1" }
 
 if (-not (Test-Path (Split-Path $profilePath))) { New-Item -Type Directory -Force (Split-Path $profilePath) | Out-Null }
 if (-not (Test-Path $profilePath)) { New-Item -Type File -Force $profilePath | Out-Null }
 
-# Use single quotes inside the here-string to avoid double-quote escaping nightmares
-# NOTE: closing "@ must have ZERO leading whitespace — PowerShell requires this
-$termoteAlias = @"
-
-function termote {
-    `$env:PATH += ';$backendDir'
-    Set-Location '$backendDir'
-    .\start.ps1
-}
-"@
+# Completely bypass Here-String bugs by using a string array
+$aliasLines = @(
+    ""
+    "function termote {"
+    "    `$env:PATH += ';$backendDir'"
+    "    Set-Location '$backendDir'"
+    "    .\start.ps1"
+    "}"
+)
 
 $existingProfile = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
 if ($null -eq $existingProfile -or $existingProfile -notmatch "function termote") {
-    Add-Content -Path $profilePath -Value "`n$termoteAlias"
+    $aliasLines | Add-Content -Path $profilePath
 }
 
 Write-Host "  Added 'termote' function to your PowerShell profile." -ForegroundColor Green
