@@ -48,51 +48,14 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     Write-Host "[2/7] Rust already installed, skipping..." -ForegroundColor Gray
 }
 
-# 3. Install cloudflared (Winget with direct download fallback)
-$cloudflaredInstalled = $false
-if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
-    $cloudflaredInstalled = $true
-    Write-Host "[3/7] Cloudflared already installed globally, skipping..." -ForegroundColor Gray
-}
-
-if (-not $cloudflaredInstalled) {
-    Write-Host "[3/7] Installing Cloudflared tunnel client..." -ForegroundColor Yellow
-
-    # Attempt 1: Try Winget
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        winget install --id Cloudflare.cloudflared --exact --accept-package-agreements --accept-source-agreements | Out-Null
-        if ($LASTEXITCODE -eq 0 -and (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
-            $cloudflaredInstalled = $true
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-            Write-Host "  Cloudflared installed via winget!" -ForegroundColor Green
-        }
-    }
-
-    # Attempt 2: Direct download
-    if (-not $cloudflaredInstalled) {
-        Write-Host "  Downloading directly from Cloudflare..." -ForegroundColor DarkGray
-        $termoteBinDir = "$installDir\bin"
-        $cloudflaredPath = "$termoteBinDir\cloudflared.exe"
-        $backendCloudflaredPath = "$backendDir\cloudflared.exe"
-
-        if (-not (Test-Path $termoteBinDir)) { New-Item -Type Directory -Force $termoteBinDir | Out-Null }
-
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cloudflaredPath
-
-        if (Test-Path $cloudflaredPath) {
-            Copy-Item $cloudflaredPath -Destination $backendCloudflaredPath -Force
-            $env:Path += ";$termoteBinDir"
-            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-            if ($userPath -notmatch [regex]::Escape($termoteBinDir)) {
-                [Environment]::SetEnvironmentVariable("Path", "$userPath;$termoteBinDir", "User")
-            }
-            $cloudflaredInstalled = $true
-            Write-Host "  Cloudflared downloaded manually!" -ForegroundColor Green
-        } else {
-            Write-Host "ERROR: Failed to download cloudflared." -ForegroundColor Red
-        }
-    }
+# 3. Check for SSH (built into Windows 10 1809+)
+Write-Host "[3/7] Checking for SSH..." -ForegroundColor Yellow
+if (Get-Command ssh -ErrorAction SilentlyContinue) {
+    Write-Host "  SSH found: $(ssh -V 2>&1)" -ForegroundColor Green
+} else {
+    Write-Host "  SSH not found. Windows 10 1809+ has SSH built-in." -ForegroundColor Red
+    Write-Host "  Enable it via: Settings > Apps > Optional Features > OpenSSH Client" -ForegroundColor Yellow
+    exit 1
 }
 
 # 4. Compile the Rust backend
@@ -112,7 +75,7 @@ if (-not (Test-Path $shimDir)) {
     New-Item -Type Directory -Force $shimDir | Out-Null
 }
 
-$termoteShimContent = @"
+$termoteShimContent = @'
 # Smart termote launcher - VS Code style single instance
 $backendDir = "$env:USERPROFILE\termote\backend"
 $envFile = "$backendDir\.env"
@@ -161,7 +124,7 @@ if ($termoteProc) {
                 $tunnelUrl = if ($content -match 'TUNNEL_URL=(.+)') { $Matches[1].Trim() } else { $null }
                 $token = if ($content -match 'AUTH_TOKEN=(.+)') { $Matches[1].Trim() } else { $null }
                 if ($tunnelUrl -and $token -and $tunnelUrl -notmatch '127\.0\.0\.1') {
-                    # First open raw tunnel URL to clear Cloudflare challenge, then open app
+                    # First open raw tunnel URL, then open app
                     $httpsUrl = "https://" + $tunnelUrl.Substring(5)
                     Start-Process $httpsUrl
                     Start-Sleep -Seconds 2
@@ -176,7 +139,7 @@ if ($termoteProc) {
     } else {
         Write-Host "Existing Termote instance is hung and won't respond. Restarting it..." -ForegroundColor Yellow
         Stop-Process -Name "termote" -Force -EA SilentlyContinue
-        Stop-Process -Name "cloudflared" -Force -EA SilentlyContinue
+        Stop-Process -Name "ssh" -Force -EA SilentlyContinue
         Start-Sleep -Seconds 1
     }
 }
@@ -184,7 +147,7 @@ if ($termoteProc) {
 # 2. If we get here, no instances are running. Start fresh!
 Write-Host "Starting fresh Termote server..." -ForegroundColor Green
 & "$termoteDir\start.ps1"
-"@
+'@
 Set-Content -Path "$shimDir\termote.ps1" -Value $termoteShimContent -Encoding UTF8
 
 $cmdLines = @(
@@ -192,6 +155,32 @@ $cmdLines = @(
     "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`& '%~dp0termote.ps1' %*`""
 )
 Set-Content -Path "$shimDir\termote.cmd" -Value $cmdLines -Encoding ASCII
+
+$killLines = @(
+    '# Termote Kill Script'
+    'Write-Host "Stopping Termote..." -ForegroundColor Yellow'
+    'Get-Process -Name "termote" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
+    'Get-Process -Name "ssh" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue'
+    'Get-NetTCPConnection -LocalPort 9090 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }'
+    'Get-NetTCPConnection -LocalPort 9091 -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue }'
+    'Write-Host "All Termote instances stopped." -ForegroundColor Green'
+)
+Set-Content -Path "$shimDir\termote-kill.ps1" -Value $killLines -Encoding UTF8
+
+$killCmdLines = @(
+    "@echo off"
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`& '%~dp0termote-kill.ps1'`""
+)
+Set-Content -Path "$shimDir\termote-kill.cmd" -Value $killCmdLines -Encoding ASCII
+
+# Add shimDir to PATH if not already there
+$userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ($userPath -notlike "*$shimDir*") {
+    [Environment]::SetEnvironmentVariable("PATH", "$userPath;$shimDir", "User")
+    $env:PATH += ";$shimDir"
+    Write-Host "  Added to PATH." -ForegroundColor Green
+}
+Write-Host "  Commands installed." -ForegroundColor Green
 
 # 6. Add "Open with Termote" context menu
 Write-Host "[6/7] Adding Windows Explorer context menu..." -ForegroundColor Yellow
