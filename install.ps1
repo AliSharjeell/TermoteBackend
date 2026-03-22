@@ -207,7 +207,7 @@ Set-Content -Path $shimPath -Value $shimContent -Encoding UTF8
 
 # Also create termote.cmd wrapper for Windows (PATHEXT includes .cmd)
 $cmdPath = "$shimDir\termote.cmd"
-$cmdContent = "@echo off`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0termote.ps1`" %*"
+$cmdContent = "@echo off`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote.ps1' %*`""
 Set-Content -Path $cmdPath -Value $cmdContent -Encoding ASCII
 
 # Add shimDir to permanent user PATH if not already there
