@@ -103,8 +103,13 @@ $env:TUNNEL_URL = $wsUrl
 Set-Content -Path "$backendDir\.env" -Value "AUTH_TOKEN=$token`nTUNNEL_URL=$wsUrl" -Encoding UTF8
 
 # 8. Start Rust backend
+$backendExe = "$backendDir\target\release\termote.exe"
+if (-not (Test-Path $backendExe)) {
+    Write-Host "ERROR: termote.exe not found. Run install.ps1 first to build the backend." -ForegroundColor Red
+    exit 1
+}
 Set-Location $backendDir
-Start-Process -FilePath "$backendDir\target\release\termote.exe" -WindowStyle Hidden
+Start-Process -FilePath $backendExe -WindowStyle Hidden
 
 # 9. Print launch URL
 Write-Host ""
