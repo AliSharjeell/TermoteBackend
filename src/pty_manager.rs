@@ -187,7 +187,8 @@ impl PtyManager {
             let panes = state_clone.get_panes_info().await;
             let active_panes = state_clone.get_active_panes().await;
             let floating_panes = state_clone.get_floating_panes().await;
-            let _ = broadcast_tx_clone.send(crate::messages::ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            let groups = state_clone.get_all_groups().await;
+            let _ = broadcast_tx_clone.send(crate::messages::ServerMessage::StateUpdate { panes, active_panes, floating_panes, groups });
         });
 
         // Return (pane_id, pid) - the caller should add the pane to state with correct ID
