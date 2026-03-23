@@ -22,7 +22,7 @@ pub mod ws_handler;
 
 // Re-export commonly used types
 pub use auth::{validate_token, AuthResult};
-pub use messages::{ClientMessage, ServerMessage, PaneInfo};
-pub use state::{AppState, Pane};
+pub use messages::{ClientMessage, ServerMessage, PaneInfo, PaneGroupInfo};
+pub use state::{AppState, Pane, PaneGroup};
 pub use pty_manager::PtyManager;
 pub use ws_handler::{create_router, ws_handler, health_handler};
