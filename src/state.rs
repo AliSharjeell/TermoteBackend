@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
-use crate::messages::PaneInfo;
+use crate::messages::{PaneInfo, PaneGroupInfo};
 use crate::pty_manager::PtyManager;
 
 /// A single terminal pane with its associated PTY and state.
@@ -28,6 +28,8 @@ pub struct Pane {
     pub rows: u16,
     /// Scrollback buffer - recent output history
     pub buffer: Vec<u8>,
+    /// Group ID this pane belongs to (None if ungrouped).
+    pub group_id: Option<String>,
 }
 
 impl Pane {
@@ -42,6 +44,7 @@ impl Pane {
             cols,
             rows,
             buffer: Vec::new(),
+            group_id: None,
         }
     }
 
@@ -53,6 +56,28 @@ impl Pane {
         if self.buffer.len() > MAX_BUFFER_SIZE {
             let excess = self.buffer.len() - MAX_BUFFER_SIZE;
             self.buffer.drain(0..excess);
+        }
+    }
+}
+
+/// A group of panes with a name and color.
+#[derive(Clone, Debug)]
+pub struct PaneGroup {
+    /// Unique identifier for the group.
+    pub id: String,
+    /// Display name of the group.
+    pub name: String,
+    /// Hex color code for the group.
+    pub color: String,
+}
+
+impl PaneGroup {
+    /// Creates a new PaneGroup with a generated UUID.
+    pub fn new(name: String, color: String) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name,
+            color,
         }
     }
 }
@@ -78,6 +103,8 @@ pub struct AppState {
     pub broadcast_tx: Arc<broadcast::Sender<crate::messages::ServerMessage>>,
     /// Shared PTY manager for all WebSocket connections
     pub pty_manager: Arc<PtyManager>,
+    /// Map of group ID to PaneGroup.
+    pub groups: Arc<RwLock<HashMap<String, PaneGroup>>>,
 }
 
 impl AppState {
@@ -94,6 +121,7 @@ impl AppState {
             tunnel_url,
             broadcast_tx: Arc::new(broadcast_tx),
             pty_manager: Arc::new(PtyManager::new()),
+            groups: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -220,6 +248,17 @@ impl AppState {
         }
     }
 
+    /// Sets a pane's group.
+    pub async fn set_pane_group(&self, pane_id: &str, group_id: Option<&str>) -> bool {
+        let mut panes = self.panes.write().await;
+        if let Some(pane) = panes.get_mut(pane_id) {
+            pane.group_id = group_id.map(|s| s.to_string());
+            true
+        } else {
+            false
+        }
+    }
+
     /// Checks if the given token is valid.
     pub async fn validate_token(&self, token: &str) -> bool {
         &self.auth_token == token
@@ -235,6 +274,56 @@ impl AppState {
     pub async fn is_authenticated(&self) -> bool {
         let auth = self.authenticated.read().await;
         *auth
+    }
+
+    /// Adds a new group.
+    pub async fn add_group(&self, group: PaneGroup) {
+        let mut groups = self.groups.write().await;
+        groups.insert(group.id.clone(), group);
+    }
+
+    /// Removes a group and ungroups all panes in it.
+    pub async fn remove_group(&self, group_id: &str) -> bool {
+        let mut groups = self.groups.write().await;
+        if groups.remove(group_id).is_some() {
+            // Ungroup all panes in this group
+            let mut panes = self.panes.write().await;
+            for pane in panes.values_mut() {
+                if pane.group_id.as_deref() == Some(group_id) {
+                    pane.group_id = None;
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Gets a group by ID.
+    pub async fn get_group(&self, group_id: &str) -> Option<PaneGroup> {
+        let groups = self.groups.read().await;
+        groups.get(group_id).cloned()
+    }
+
+    /// Gets all groups as PaneGroupInfo structs.
+    pub async fn get_all_groups(&self) -> Vec<PaneGroupInfo> {
+        let groups = self.groups.read().await;
+        groups.values().map(|g| PaneGroupInfo {
+            id: g.id.clone(),
+            name: g.name.clone(),
+            color: g.color.clone(),
+        }).collect()
+    }
+
+    /// Renames a group.
+    pub async fn rename_group(&self, group_id: &str, name: &str) -> bool {
+        let mut groups = self.groups.write().await;
+        if let Some(group) = groups.get_mut(group_id) {
+            group.name = name.to_string();
+            true
+        } else {
+            false
+        }
     }
 
     /// Spawns a new pane with the shell starting in the specified directory.
@@ -278,10 +367,12 @@ impl AppState {
         let panes = self.get_panes_info().await;
         let active_panes = self.get_active_panes().await;
         let floating_panes = self.get_floating_panes().await;
+        let groups = self.get_all_groups().await;
         let _ = self.broadcast_tx.send(crate::messages::ServerMessage::StateUpdate {
             panes,
             active_panes,
             floating_panes,
+            groups,
         });
 
         tracing::info!("Spawned pane {} at directory {}", pane_id, dir);
@@ -295,7 +386,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_state_pane_management() {
-        let state = AppState::new("test_token".to_string());
+        let state = AppState::new("test_token".to_string(), "http://localhost".to_string(), "ws://localhost".to_string());
 
         // Initially empty
         assert!(state.get_panes_info().await.is_empty());
@@ -318,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authentication() {
-        let state = AppState::new("secret123".to_string());
+        let state = AppState::new("secret123".to_string(), "http://localhost".to_string(), "ws://localhost".to_string());
 
         assert!(!state.is_authenticated().await);
         assert!(state.validate_token("wrong").await);
