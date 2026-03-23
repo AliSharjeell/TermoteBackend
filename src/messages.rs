@@ -124,6 +124,7 @@ pub struct PaneInfo {
     /// Number of rows.
     pub rows: u16,
     /// Group ID this pane belongs to (null if ungrouped).
+    #[serde(rename = "groupId")]
     pub group_id: Option<String>,
 }
 
