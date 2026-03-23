@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpListener;
 use tower_http::cors::{CorsLayer, Any};
 use tracing::{info, Level, error};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
 
 use termote::{create_router, AppState};
 
@@ -58,16 +58,36 @@ async fn run_ipc_server(state: Arc<AppState>) {
 
 #[tokio::main]
 async fn main() {
-    // Initialize logging
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
+    // Initialize logging to file in TEMP directory
+    let log_dir = std::env::temp_dir();
+    let log_file = log_dir.join("termote.log");
+
+    let file_appender = tracing_appender::rolling::daily(log_dir, "termote.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    // Leak the guard so it lives for the entire program duration
+    // This is necessary because the guard must outlive the tracing subscriber
+    std::mem::forget(guard);
+
+    let file_layer = fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
         .with_target(true)
-        .with_thread_ids(true)
-        .finish();
+        .with_thread_ids(true);
+
+    let stdout_layer = fmt::layer()
+        .with_target(true)
+        .with_thread_ids(false);
+
+    let subscriber = tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env().add_directive(Level::DEBUG.into()))
+        .with(file_layer)
+        .with(stdout_layer);
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set tracing subscriber");
 
     info!("Starting Terminal Multiplexer Backend");
+    info!("Log file: {}", log_file.display());
 
     // Load environment variables from .env file if present
     dotenvy::dotenv().ok();
