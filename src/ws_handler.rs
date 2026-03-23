@@ -363,9 +363,13 @@ async fn handle_client_message(
             tracing::debug!("Received ping from client");
         }
 
-        ClientMessage::CreateGroup { name, color } => {
+        ClientMessage::CreateGroup { id, name, color } => {
             info!("Create group: {} ({})", name, color);
-            let group = PaneGroup::new(name.clone(), color.clone());
+            let group = if let Some(id) = id {
+                PaneGroup { id, name: name.clone(), color: color.clone() }
+            } else {
+                PaneGroup::new(name.clone(), color.clone())
+            };
             state.add_group(group.clone()).await;
 
             // Broadcast group created event

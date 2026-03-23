@@ -52,7 +52,7 @@ pub enum ClientMessage {
 
     /// Create a new pane group.
     #[serde(rename = "create_group")]
-    CreateGroup { name: String, color: String },
+    CreateGroup { id: Option<String>, name: String, color: String },
 
     /// Delete a pane group (panes in group become ungrouped).
     #[serde(rename = "delete_group")]
