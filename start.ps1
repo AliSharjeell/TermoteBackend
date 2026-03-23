@@ -55,7 +55,15 @@ if ($versionOutput -notmatch 'version') {
     exit 1
 }
 
-# 4. Start devtunnel
+# 4. Check auth and re-auth if expired
+Write-Host "Checking Dev Tunnel authentication..." -ForegroundColor Yellow
+$output = & $devtunnelExe user show 2>&1
+if ($output -match "expired" -or $LASTEXITCODE -ne 0) {
+    Write-Host "Re-authenticating with device code..."
+    & $devtunnelExe user login -g
+}
+
+# 5. Start devtunnel
 Write-Host "Starting Microsoft Dev Tunnel..." -ForegroundColor Yellow
 $process = Start-Process -FilePath $devtunnelExe `
     -ArgumentList "host", "-p", "9090", "--allow-anonymous" `
@@ -63,7 +71,7 @@ $process = Start-Process -FilePath $devtunnelExe `
     -RedirectStandardOutput $tunnelLog `
     -RedirectStandardError $tunnelErrLog
 
-# 5. Wait for the tunnel URL
+# 6. Wait for the tunnel URL
 Write-Host "Waiting for tunnel URL..." -ForegroundColor DarkGray
 $devtunnelUrl = ""
 $startTime = Get-Date
@@ -89,16 +97,16 @@ while (((Get-Date) - $startTime).TotalSeconds -lt 20) {
     Start-Sleep -Seconds 1
 }
 
-# 6. Build WSS URL and write .env
+# 7. Build WSS URL and write .env
 $wsUrl = $devtunnelUrl -replace '^https://', 'wss://'
 $env:TUNNEL_URL = $wsUrl
 Set-Content -Path "$backendDir\.env" -Value "AUTH_TOKEN=$token`nTUNNEL_URL=$wsUrl" -Encoding UTF8
 
-# 7. Start Rust backend
+# 8. Start Rust backend
 Set-Location $backendDir
 Start-Process -FilePath "$backendDir\target\release\termote.exe" -WindowStyle Hidden
 
-# 8. Print launch URL
+# 9. Print launch URL
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Green
 Write-Host " Termote is Live via Microsoft Dev Tunnels!" -ForegroundColor White
