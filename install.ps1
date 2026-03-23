@@ -258,6 +258,34 @@ $linkCmdLines = @(
 )
 Set-Content -Path "$shimDir\termote-link.cmd" -Value $linkCmdLines -Encoding ASCII
 
+# termote-log: Tail the real-time backend log file
+$logLines = @(
+    '# Termote Log Viewer'
+    ''
+    '# Find the latest rolling log file (tracing-appender uses prefix.YYYY-MM-DD pattern)'
+    '$logDir = $env:TEMP'
+    '$logFiles = Get-ChildItem -Path $logDir -Filter "termote.log.*" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending'
+    '$logPath = if ($logFiles) { $logFiles[0].FullName } else { "$logDir\termote.log" }'
+    ''
+    'if (-not (Test-Path $logPath)) {'
+    '    Write-Host "No log file found in: $logDir" -ForegroundColor Red'
+    '    Write-Host "Is Termote running?" -ForegroundColor Yellow'
+    '    exit 1'
+    '}'
+    ''
+    'Write-Host "Tailing: $logPath" -ForegroundColor Cyan'
+    'Write-Host "Press Ctrl+C to stop." -ForegroundColor Gray'
+    'Write-Host ""'
+    'Get-Content -Path $logPath -Wait -Tail 50'
+)
+Set-Content -Path "$shimDir\termote-log.ps1" -Value $logLines -Encoding UTF8
+
+$logCmdLines = @(
+    "@echo off"
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote-log.ps1' %*`""
+)
+Set-Content -Path "$shimDir\termote-log.cmd" -Value $logCmdLines -Encoding ASCII
+
 # Add shimDir to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($userPath -notlike "*$shimDir*") {
@@ -314,6 +342,7 @@ Write-Host "  Available commands:" -ForegroundColor White
 Write-Host "  - termote         : Start or connect to Termote" -ForegroundColor Cyan
 Write-Host "  - termote-kill   : Stop all Termote instances" -ForegroundColor Cyan
 Write-Host "  - termote-link   : Show tunnel URL, password & share link" -ForegroundColor Cyan
+Write-Host "  - termote-log    : View real-time backend logs" -ForegroundColor Cyan
 Write-Host "  - Right-click in folder -> 'Open with Termote'" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  If commands not found in new terminal, run:" -ForegroundColor Yellow
