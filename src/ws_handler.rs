@@ -20,9 +20,8 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tracing::{info, error, warn};
 
-use crate::messages::{ClientMessage, ServerMessage};
-
-use crate::state::AppState;
+use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo};
+use crate::state::{AppState, PaneGroup};
 
 /// Maximum time to wait for authentication after connection.
 const AUTH_TIMEOUT_SECS: u64 = 5;
@@ -123,7 +122,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                         let panes = state.get_panes_info().await;
                         let active_panes = state.get_active_panes().await;
                         let floating_panes = state.get_floating_panes().await;
-                        let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone() }).await;
+                        let groups = state.get_all_groups().await;
+                        let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone(), groups }).await;
 
                         // Replay scrollback buffers for all panes to this client
                         let all_pane_ids: Vec<String> = active_panes.iter().chain(floating_panes.iter()).cloned().collect();
@@ -230,6 +230,20 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     broadcast_task.abort();
 }
 
+/// Helper to broadcast a state update with groups.
+async fn broadcast_state_update(state: &AppState) {
+    let panes = state.get_panes_info().await;
+    let active_panes = state.get_active_panes().await;
+    let floating_panes = state.get_floating_panes().await;
+    let groups = state.get_all_groups().await;
+    let _ = state.broadcast_tx.send(ServerMessage::StateUpdate {
+        panes,
+        active_panes,
+        floating_panes,
+        groups,
+    });
+}
+
 /// Handles a parsed client message.
 async fn handle_client_message(
     msg: ClientMessage,
@@ -254,10 +268,7 @@ async fn handle_client_message(
             state.add_pane(pane).await;
 
             // Broadcast state update to all clients
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            broadcast_state_update(state).await;
 
             info!("Spawned pane {} with PID {}", pane_id, pid);
         }
@@ -287,10 +298,7 @@ async fn handle_client_message(
                 }
 
                 // Broadcast state update to all clients
-                let panes = state.get_panes_info().await;
-                let active_panes = state.get_active_panes().await;
-                let floating_panes = state.get_floating_panes().await;
-                let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+                broadcast_state_update(state).await;
             }
         }
 
@@ -306,10 +314,7 @@ async fn handle_client_message(
             state.remove_pane(&pane_id).await;
 
             // Broadcast state update to all clients
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            broadcast_state_update(state).await;
         }
 
         ClientMessage::MoveToFloating { pane_id } => {
@@ -317,10 +322,7 @@ async fn handle_client_message(
             state.move_to_floating(&pane_id).await;
 
             // Broadcast state update to all clients
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            broadcast_state_update(state).await;
         }
 
         ClientMessage::MoveToActive { pane_id } => {
@@ -328,10 +330,7 @@ async fn handle_client_message(
             state.move_to_active(&pane_id).await;
 
             // Broadcast state update to all clients
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            broadcast_state_update(state).await;
         }
 
         ClientMessage::Rename { pane_id, name } => {
@@ -339,10 +338,7 @@ async fn handle_client_message(
             state.rename_pane(&pane_id, &name).await;
 
             // Broadcast state update to all clients
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            broadcast_state_update(state).await;
         }
 
         ClientMessage::Refocus { pane_id, cols, rows } => {
@@ -354,10 +350,7 @@ async fn handle_client_message(
             }
 
             // Broadcast to ALL clients (including sender) so everyone updates
-            let panes = state.get_panes_info().await;
-            let active_panes = state.get_active_panes().await;
-            let floating_panes = state.get_floating_panes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::StateUpdate { panes, active_panes, floating_panes });
+            broadcast_state_update(state).await;
         }
 
         ClientMessage::Auth { .. } => {
@@ -368,6 +361,56 @@ async fn handle_client_message(
         ClientMessage::Ping => {
             // No-op: heartbeat to keep connection alive
             tracing::debug!("Received ping from client");
+        }
+
+        ClientMessage::CreateGroup { name, color } => {
+            info!("Create group: {} ({})", name, color);
+            let group = PaneGroup::new(name.clone(), color.clone());
+            state.add_group(group.clone()).await;
+
+            // Broadcast group created event
+            let group_info = PaneGroupInfo {
+                id: group.id.clone(),
+                name: group.name.clone(),
+                color: group.color.clone(),
+            };
+            let _ = state.broadcast_tx.send(ServerMessage::GroupCreated { group: group_info });
+
+            // Broadcast state update to sync groups
+            broadcast_state_update(state).await;
+        }
+
+        ClientMessage::DeleteGroup { group_id } => {
+            info!("Delete group: {}", group_id);
+            if state.remove_group(&group_id).await {
+                // Broadcast group deleted event
+                let _ = state.broadcast_tx.send(ServerMessage::GroupDeleted { group_id: group_id.clone() });
+
+                // Broadcast state update to sync groups
+                broadcast_state_update(state).await;
+            }
+        }
+
+        ClientMessage::RenameGroup { group_id, name } => {
+            info!("Rename group {} to {}", group_id, name);
+            if state.rename_group(&group_id, &name).await {
+                // Broadcast group renamed event
+                let _ = state.broadcast_tx.send(ServerMessage::GroupRenamed { group_id: group_id.clone(), name: name.clone() });
+
+                // Broadcast state update to sync groups
+                broadcast_state_update(state).await;
+            }
+        }
+
+        ClientMessage::SetPaneGroup { pane_id, group_id } => {
+            info!("Set pane {} group to {:?}", pane_id, group_id);
+            if state.set_pane_group(&pane_id, group_id.as_deref()).await {
+                // Broadcast pane group set event
+                let _ = state.broadcast_tx.send(ServerMessage::PaneGroupSet { pane_id: pane_id.clone(), group_id: group_id.clone() });
+
+                // Broadcast state update to sync groups
+                broadcast_state_update(state).await;
+            }
         }
     }
 
