@@ -3,7 +3,7 @@
 //! Defines the bidirectional JSON protocol between client and server.
 
 use serde::{Deserialize, Serialize};
-use crate::state::Pane;
+use crate::state::{Pane, PaneGroup};
 
 /// Client to server messages.
 #[derive(Deserialize, Debug)]
@@ -49,6 +49,22 @@ pub enum ClientMessage {
     /// Ping/pong heartbeat (no-op, just keeps connection alive).
     #[serde(rename = "ping")]
     Ping,
+
+    /// Create a new pane group.
+    #[serde(rename = "create_group")]
+    CreateGroup { name: String, color: String },
+
+    /// Delete a pane group (panes in group become ungrouped).
+    #[serde(rename = "delete_group")]
+    DeleteGroup { group_id: String },
+
+    /// Rename a pane group.
+    #[serde(rename = "rename_group")]
+    RenameGroup { group_id: String, name: String },
+
+    /// Set a pane's group (or null to remove from group).
+    #[serde(rename = "set_pane_group")]
+    SetPaneGroup { pane_id: String, group_id: Option<String> },
 }
 
 /// Server to client messages.
@@ -61,6 +77,7 @@ pub enum ServerMessage {
         panes: Vec<PaneInfo>,
         active_panes: Vec<String>,
         floating_panes: Vec<String>,
+        groups: Vec<PaneGroupInfo>,
     },
 
     /// Terminal output data from a pane.
@@ -73,6 +90,22 @@ pub enum ServerMessage {
         success: bool,
         message: Option<String>,
     },
+
+    /// A group was created.
+    #[serde(rename = "group_created")]
+    GroupCreated { group: PaneGroupInfo },
+
+    /// A group was deleted.
+    #[serde(rename = "group_deleted")]
+    GroupDeleted { group_id: String },
+
+    /// A group was renamed.
+    #[serde(rename = "group_renamed")]
+    GroupRenamed { group_id: String, name: String },
+
+    /// A pane's group was set.
+    #[serde(rename = "pane_group_set")]
+    PaneGroupSet { pane_id: String, group_id: Option<String> },
 }
 
 /// Information about a pane sent to clients.
@@ -90,6 +123,8 @@ pub struct PaneInfo {
     pub cols: u16,
     /// Number of rows.
     pub rows: u16,
+    /// Group ID this pane belongs to (null if ungrouped).
+    pub group_id: Option<String>,
 }
 
 impl From<&Pane> for PaneInfo {
@@ -101,6 +136,28 @@ impl From<&Pane> for PaneInfo {
             name: pane.name.clone(),
             cols: pane.cols,
             rows: pane.rows,
+            group_id: pane.group_id.clone(),
+        }
+    }
+}
+
+/// Information about a pane group sent to clients.
+#[derive(Serialize, Clone, Debug)]
+pub struct PaneGroupInfo {
+    /// Unique identifier for the group.
+    pub id: String,
+    /// Display name of the group.
+    pub name: String,
+    /// Hex color code for the group.
+    pub color: String,
+}
+
+impl From<&PaneGroup> for PaneGroupInfo {
+    fn from(group: &PaneGroup) -> Self {
+        PaneGroupInfo {
+            id: group.id.clone(),
+            name: group.name.clone(),
+            color: group.color.clone(),
         }
     }
 }
