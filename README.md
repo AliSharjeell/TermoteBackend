@@ -50,10 +50,10 @@ You are on a restrictive school or corporate Wi-Fi network that aggressively blo
 
 ## 60-Second Setup
 
-1. Run the install command  
-2. Termote UI launches  
-3. You can scan the QR for your phone or copy link for other devices
-4. 4. You now control your PC Terminal from anywhere
+1. Run the install command
+2. Termote UI launches
+3. Scan the QR code for your phone or copy the link for other devices
+4. Control your PC terminal from anywhere
 
 ## Installation
 
@@ -64,7 +64,7 @@ Run this one-liner on your Windows machine:
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1 | iex"
 ```
-> **Note:** On your very first run, a browser window will pop up asking you to authenticate with GitHub or Microsoft. This is a one-time setup required by Microsoft Dev Tunnels to securely route your connection.
+> **Note:** On your very first run, a browser window will pop up asking you to authenticate with your Microsoft account. This is a one-time setup required by Microsoft Dev Tunnels to securely route your connection.
 
 **Troubleshooting:** If the `termote` command is not found immediately after installation, restart your terminal or run this to refresh your environment variables:
 
@@ -90,6 +90,7 @@ After installation, the following commands are available in your terminal:
 | `termote` | Starts the server. If already running, opens the current directory as a new pane in your active session. |
 | `termote-kill` | Safely shuts down all Termote instances and active tunnels. |
 | `termote-link` | Displays your active tunnel URL, password, and shareable link. |
+| `termote-log` | View real-time backend logs in your terminal. |
 | Right-click in folder → **"Open with Termote"** | Instantly opens a new terminal pane for that specific folder in your existing web UI. |
 
 ---
