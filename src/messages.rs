@@ -17,6 +17,10 @@ pub enum ClientMessage {
     #[serde(rename = "spawn")]
     Spawn { shell: String },
 
+    /// Spawn a new terminal pane at a specific directory.
+    #[serde(rename = "spawn_at_dir")]
+    SpawnAtDir { shell: String, dir: String },
+
     /// Send input data to a specific pane.
     #[serde(rename = "input")]
     Input { pane_id: String, data: String },
@@ -70,6 +74,11 @@ pub enum ClientMessage {
     /// Server opens OS dialog, spawns terminal at selected directory.
     #[serde(rename = "request_directory_picker")]
     RequestDirectoryPicker { shell: String },
+
+    /// List directory contents at the given path.
+    /// Returns drives (C:\, D:\, etc.) if path is empty/null.
+    #[serde(rename = "list_directory")]
+    ListDirectory { path: Option<String> },
 
     /// Request the list of connected devices.
     #[serde(rename = "get_device_list")]
@@ -131,6 +140,13 @@ pub enum ServerMessage {
     /// Directory picker was cancelled by user.
     #[serde(rename = "directory_picker_cancelled")]
     DirectoryPickerCancelled,
+
+    /// Directory contents response for file explorer.
+    #[serde(rename = "directory_contents")]
+    DirectoryContents {
+        path: String,
+        items: Vec<DirectoryItem>,
+    },
 
     /// List of connected devices (sent in response to get_device_list).
     #[serde(rename = "device_list")]
@@ -236,4 +252,15 @@ impl From<&PaneGroup> for PaneGroupInfo {
             color: group.color.clone(),
         }
     }
+}
+
+/// A single item in a directory listing.
+#[derive(Serialize, Clone, Debug)]
+pub struct DirectoryItem {
+    /// Name of the file or directory.
+    pub name: String,
+    /// Absolute path to the item.
+    pub absolute_path: String,
+    /// Whether this item is a directory.
+    pub is_dir: bool,
 }

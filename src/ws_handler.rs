@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tracing::{info, error, warn};
 
-use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo};
+use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo, DirectoryItem};
 use crate::state::{AppState, ConnectedDevice, PaneGroup};
 
 /// Decode base64 string to bytes.
@@ -307,6 +307,18 @@ async fn handle_client_message(
             info!("Spawned pane {} with PID {}", pane_id, pid);
         }
 
+        ClientMessage::SpawnAtDir { shell, dir } => {
+            info!("Spawn at directory request: {} in {}", shell, dir);
+
+            if let Err(e) = state.spawn_pane_at_dir(&dir, &shell).await {
+                error!("Failed to spawn pane at {}: {}", dir, e);
+                let _ = state.broadcast_tx.send(ServerMessage::Error {
+                    message: format!("Failed to spawn terminal at {}: {}", dir, e),
+                });
+            }
+            // spawn_pane_at_dir already broadcasts state_update
+        }
+
         ClientMessage::RequestDirectoryPicker { shell } => {
             info!("Directory picker requested for shell: {}", shell);
 
@@ -337,6 +349,100 @@ async fn handle_client_message(
                     let _ = state.broadcast_tx.send(ServerMessage::DirectoryPickerCancelled);
                 }
             }
+        }
+
+        ClientMessage::ListDirectory { path } => {
+            info!("List directory requested: {:?}", path);
+
+            let target_path = if let Some(p) = &path {
+                if p.is_empty() {
+                    None
+                } else {
+                    Some(p.as_str())
+                }
+            } else {
+                None
+            };
+
+            let (result_path, items) = match target_path {
+                Some(p) => {
+                    // List the specified directory
+                    let path_str = p.to_string();
+                    let dir_items = match std::fs::read_dir(p) {
+                        Ok(entries) => {
+                            let mut items: Vec<DirectoryItem> = Vec::new();
+                            for entry in entries.flatten() {
+                                let entry_path = entry.path();
+                                let name = entry.file_name().to_string_lossy().to_string();
+                                // Skip hidden files/folders on Windows
+                                if name.starts_with('.') {
+                                    continue;
+                                }
+                                let is_dir = entry_path.is_dir();
+                                let absolute_path = entry_path.to_string_lossy().to_string();
+                                items.push(DirectoryItem {
+                                    name,
+                                    absolute_path,
+                                    is_dir,
+                                });
+                            }
+                            // Sort: directories first, then alphabetically
+                            items.sort_by(|a, b| {
+                                match (a.is_dir, b.is_dir) {
+                                    (true, false) => std::cmp::Ordering::Less,
+                                    (false, true) => std::cmp::Ordering::Greater,
+                                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                                }
+                            });
+                            Ok(items)
+                        }
+                        Err(e) => {
+                            warn!("Failed to read directory {}: {}", p, e);
+                            Ok(Vec::new()) // Return empty on permission errors
+                        }
+                    };
+                    (path_str, dir_items)
+                }
+                None => {
+                    // Return available drives on Windows
+                    let mut items = Vec::new();
+                    #[cfg(windows)]
+                    {
+                        // Check common Windows drive letters
+                        for letter in b'A'..=b'Z' {
+                            let drive = format!("{}:\\", letter as char);
+                            let path = std::path::Path::new(&drive);
+                            if path.exists() {
+                                items.push(DirectoryItem {
+                                    name: format!("{}:", letter as char),
+                                    absolute_path: drive,
+                                    is_dir: true,
+                                });
+                            }
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        // On Unix, return root
+                        items.push(DirectoryItem {
+                            name: "/".to_string(),
+                            absolute_path: "/".to_string(),
+                            is_dir: true,
+                        });
+                    }
+                    let home_dir = dirs::home_dir();
+                    let result_path = home_dir
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "/".to_string());
+                    (result_path, Ok(items))
+                }
+            };
+
+            let response_items = items.unwrap_or_else(|_: std::io::Error| Vec::new());
+            let _ = _tx.send(ServerMessage::DirectoryContents {
+                path: result_path,
+                items: response_items,
+            });
         }
 
         ClientMessage::Input { pane_id, data } => {
