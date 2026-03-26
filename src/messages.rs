@@ -65,6 +65,11 @@ pub enum ClientMessage {
     /// Set a pane's group (or null to remove from group).
     #[serde(rename = "set_pane_group")]
     SetPaneGroup { pane_id: String, group_id: Option<String> },
+
+    /// Request a native directory picker dialog.
+    /// Server opens OS dialog, spawns terminal at selected directory.
+    #[serde(rename = "request_directory_picker")]
+    RequestDirectoryPicker { shell: String },
 }
 
 /// Server to client messages.
@@ -106,6 +111,10 @@ pub enum ServerMessage {
     /// A pane's group was set.
     #[serde(rename = "pane_group_set")]
     PaneGroupSet { pane_id: String, group_id: Option<String> },
+
+    /// Directory picker was cancelled by user.
+    #[serde(rename = "directory_picker_cancelled")]
+    DirectoryPickerCancelled,
 }
 
 /// Information about a pane sent to clients.

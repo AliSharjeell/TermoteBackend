@@ -273,6 +273,38 @@ async fn handle_client_message(
             info!("Spawned pane {} with PID {}", pane_id, pid);
         }
 
+        ClientMessage::RequestDirectoryPicker { shell } => {
+            info!("Directory picker requested for shell: {}", shell);
+
+            // Open native folder picker on a blocking thread (rfd requires main thread on Windows)
+            let dir = tokio::task::spawn_blocking(move || {
+                let picker = rfd::FileDialog::new()
+                    .set_title("Select Terminal Directory")
+                    .pick_folder();
+
+                picker.map(|p| p.to_string_lossy().to_string())
+            }).await;
+
+            match dir {
+                Ok(Some(selected_dir)) => {
+                    info!("Directory selected: {}", selected_dir);
+                    if let Err(e) = state.spawn_pane_at_dir(&selected_dir, &shell).await {
+                        error!("Failed to spawn pane at {}: {}", selected_dir, e);
+                    }
+                    // spawn_pane_at_dir already broadcasts state_update
+                }
+                Ok(None) => {
+                    info!("Directory picker cancelled");
+                    // User cancelled - notify client
+                    let _ = state.broadcast_tx.send(ServerMessage::DirectoryPickerCancelled);
+                }
+                Err(e) => {
+                    error!("Directory picker error: {}", e);
+                    let _ = state.broadcast_tx.send(ServerMessage::DirectoryPickerCancelled);
+                }
+            }
+        }
+
         ClientMessage::Input { pane_id, data } => {
             info!("Backend received input for pane: {}", pane_id);
             if let Err(e) = state.pty_manager.write_input(&pane_id, &data) {
