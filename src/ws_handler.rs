@@ -21,7 +21,7 @@ use tokio::time::timeout;
 use tracing::{info, error, warn};
 
 use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo};
-use crate::state::{AppState, ConnectedDevice, PaneGroup};
+use crate::state::{AppState, PaneGroup};
 
 /// Maximum time to wait for authentication after connection.
 const AUTH_TIMEOUT_SECS: u64 = 5;
@@ -458,7 +458,10 @@ async fn handle_client_message(
 
         ClientMessage::KickDevice { device_id } => {
             info!("Kick device requested: {}", device_id);
-            if state.remove_device(&device_id).await {
+            // Check if device exists before removing
+            let devices = state.get_connected_devices().await;
+            if devices.iter().any(|d| d.id == device_id) {
+                state.remove_device(&device_id).await;
                 let _ = state.broadcast_tx.send(ServerMessage::DeviceKicked { device_id: device_id.clone() });
             } else {
                 let _ = state.broadcast_tx.send(ServerMessage::Error { message: "Device not found".to_string() });
@@ -467,18 +470,19 @@ async fn handle_client_message(
 
         ClientMessage::BanDevice { ip } => {
             info!("Ban device requested for IP: {}", ip);
-            if state.ban_ip(&ip).await {
-                // Also kick any devices with this IP
+            // Check if already banned
+            if state.is_ip_banned(&ip).await {
+                let _ = state.broadcast_tx.send(ServerMessage::Error { message: "IP already banned".to_string() });
+            } else {
+                state.ban_ip(&ip).await;
+                // Kick any devices with this IP
                 let devices = state.get_connected_devices().await;
                 for device in devices {
                     if device.ip == ip {
-                        let _ = state.remove_device(&device.id).await;
                         let _ = state.broadcast_tx.send(ServerMessage::DeviceKicked { device_id: device.id.clone() });
                     }
                 }
                 let _ = state.broadcast_tx.send(ServerMessage::DeviceBanned { ip: ip.clone() });
-            } else {
-                let _ = state.broadcast_tx.send(ServerMessage::Error { message: "IP already banned".to_string() });
             }
         }
     }
