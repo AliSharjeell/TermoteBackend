@@ -47,6 +47,9 @@ rfd = "0.14"
 # Platform directories
 dirs = "5"
 
+# Base64 encoding/decoding for file transfers
+base64 = "0.22"
+
 [profile.release]
 opt-level = 3
 lto = true
