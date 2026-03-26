@@ -629,6 +629,11 @@ impl AppState {
         devices.values().cloned().collect()
     }
 
+    /// Gets all connected devices (alias for get_devices).
+    pub async fn get_connected_devices(&self) -> Vec<ConnectedDevice> {
+        self.get_devices().await
+    }
+
     /// Gets connection history.
     pub async fn get_connection_history(&self) -> Vec<ConnectionHistoryEntry> {
         let security = self.security.read().await;
