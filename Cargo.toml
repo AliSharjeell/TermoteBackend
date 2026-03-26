@@ -44,6 +44,9 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # Native file/folder dialogs
 rfd = "0.14"
 
+# Platform directories
+dirs = "5"
+
 [profile.release]
 opt-level = 3
 lto = true

@@ -3,13 +3,205 @@
 //! Manages panes, authentication state, and WebSocket sessions.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 use crate::messages::{PaneInfo, PaneGroupInfo};
 use crate::pty_manager::PtyManager;
+
+/// Represents a connected device/client session.
+#[derive(Clone, Debug)]
+pub struct ConnectedDevice {
+    /// Unique connection ID
+    pub id: String,
+    /// Client's IP address
+    pub ip: String,
+    /// User-Agent string from the client
+    pub user_agent: String,
+    /// When this connection was established (Unix timestamp)
+    pub connected_at: u64,
+    /// Whether this device is currently authenticated
+    pub authenticated: bool,
+}
+
+impl ConnectedDevice {
+    /// Creates a new ConnectedDevice.
+    pub fn new(ip: String, user_agent: String) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            ip,
+            user_agent,
+            connected_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            authenticated: false,
+        }
+    }
+
+    /// Returns a human-readable device info string derived from User-Agent.
+    pub fn device_info(&self) -> String {
+        let ua = &self.user_agent.to_lowercase();
+        if ua.contains("chrome") && ua.contains("windows") {
+            "Windows + Chrome".to_string()
+        } else if ua.contains("firefox") && ua.contains("windows") {
+            "Windows + Firefox".to_string()
+        } else if ua.contains("safari") && ua.contains("mac") && !ua.contains("chrome") {
+            "macOS + Safari".to_string()
+        } else if ua.contains("chrome") && ua.contains("mac") {
+            "macOS + Chrome".to_string()
+        } else if ua.contains("chrome") && ua.contains("android") {
+            "Android + Chrome".to_string()
+        } else if ua.contains("mobile") && ua.contains("safari") {
+            "iPhone/iPad + Safari".to_string()
+        } else if ua.contains("linux") {
+            "Linux".to_string()
+        } else if self.user_agent.is_empty() {
+            "Unknown".to_string()
+        } else {
+            // Return first 50 chars of user agent as fallback
+            let truncated = if self.user_agent.len() > 50 {
+                format!("{}...", &self.user_agent[..50])
+            } else {
+                self.user_agent.clone()
+            };
+            truncated
+        }
+    }
+}
+
+/// Represents a historical connection entry.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ConnectionHistoryEntry {
+    pub ip: String,
+    pub user_agent: String,
+    pub connected_at: u64,
+    pub disconnected_at: Option<u64>,
+    pub was_banned: bool,
+}
+
+/// Security state containing ban list and connection history.
+#[derive(Clone, Debug)]
+pub struct SecurityState {
+    /// List of banned IP addresses
+    pub banned_ips: Vec<String>,
+    /// Connection history
+    pub history: Vec<ConnectionHistoryEntry>,
+    /// Path to the security JSON file
+    config_path: PathBuf,
+}
+
+impl SecurityState {
+    /// Creates a new SecurityState, loading from disk if exists.
+    pub fn new(config_dir: PathBuf) -> Self {
+        let config_path = config_dir.join("security.json");
+        let (banned_ips, history) = if config_path.exists() {
+            match fs::read_to_string(&config_path) {
+                Ok(contents) => {
+                    match serde_json::from_str::<serde_json::Value>(&contents) {
+                        Ok(json) => {
+                            let banned_ips = json.get("banned_ips")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                .unwrap_or_default();
+                            let history = json.get("history")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect())
+                                .unwrap_or_default();
+                            (banned_ips, history)
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse security.json: {}", e);
+                            (Vec::new(), Vec::new())
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to read security.json: {}", e);
+                    (Vec::new(), Vec::new())
+                }
+            }
+        } else {
+            (Vec::new(), Vec::new())
+        };
+
+        Self {
+            banned_ips,
+            history,
+            config_path,
+        }
+    }
+
+    /// Adds an IP to the ban list and persists to disk.
+    pub fn ban_ip(&mut self, ip: &str) {
+        if !self.banned_ips.contains(&ip.to_string()) {
+            self.banned_ips.push(ip.to_string());
+            self.save();
+        }
+    }
+
+    /// Removes an IP from the ban list and persists to disk.
+    pub fn unban_ip(&mut self, ip: &str) -> bool {
+        let was_present = self.banned_ips.contains(&ip.to_string());
+        self.banned_ips.retain(|i| i != ip);
+        if was_present {
+            self.save();
+        }
+        was_present
+    }
+
+    /// Checks if an IP is banned.
+    pub fn is_banned(&self, ip: &str) -> bool {
+        self.banned_ips.contains(&ip.to_string())
+    }
+
+    /// Adds a connection to history.
+    pub fn add_connection(&mut self, ip: &str, user_agent: &str, connected_at: u64) {
+        self.history.push(ConnectionHistoryEntry {
+            ip: ip.to_string(),
+            user_agent: user_agent.to_string(),
+            connected_at,
+            disconnected_at: None,
+            was_banned: false,
+        });
+        // Keep only last 1000 history entries
+        if self.history.len() > 1000 {
+            self.history = self.history.split_off(self.history.len() - 1000);
+        }
+        self.save();
+    }
+
+    /// Marks a connection as disconnected in history.
+    pub fn mark_disconnected(&mut self, ip: &str, disconnected_at: u64, was_banned: bool) {
+        // Find the most recent entry for this IP that hasn't been disconnected yet
+        if let Some(entry) = self.history.iter_mut().rev()
+            .find(|e| e.ip == ip && e.disconnected_at.is_none())
+        {
+            entry.disconnected_at = Some(disconnected_at);
+            entry.was_banned = was_banned;
+            self.save();
+        }
+    }
+
+    /// Saves state to disk.
+    fn save(&self) {
+        if let Some(parent) = self.config_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let json = serde_json::json!({
+            "banned_ips": &self.banned_ips,
+            "history": &self.history,
+        });
+        if let Ok(contents) = serde_json::to_string_pretty(&json) {
+            let _ = fs::write(&self.config_path, contents);
+        }
+    }
+}
 
 /// A single terminal pane with its associated PTY and state.
 #[derive(Clone)]
@@ -107,12 +299,22 @@ pub struct AppState {
     pub groups: Arc<RwLock<HashMap<String, PaneGroup>>>,
     /// Cold start: initial directory to spawn first terminal at
     pub cold_start_dir: Option<String>,
+    /// Currently connected devices
+    pub connected_devices: Arc<RwLock<HashMap<String, ConnectedDevice>>>,
+    /// Security state (ban list, history)
+    pub security: Arc<RwLock<SecurityState>>,
 }
 
 impl AppState {
     /// Creates a new AppState with the given auth token.
     pub fn new(auth_token: String, frontend_url: String, tunnel_url: String, cold_start_dir: Option<String>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(100);
+
+        // Initialize config directory for security state
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("termote");
+
         Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
             active_panes: Arc::new(RwLock::new(Vec::new())),
@@ -125,6 +327,8 @@ impl AppState {
             pty_manager: Arc::new(PtyManager::new()),
             groups: Arc::new(RwLock::new(HashMap::new())),
             cold_start_dir,
+            connected_devices: Arc::new(RwLock::new(HashMap::new())),
+            security: Arc::new(RwLock::new(SecurityState::new(config_dir))),
         }
     }
 
@@ -380,6 +584,101 @@ impl AppState {
 
         tracing::info!("Spawned pane {} at directory {}", pane_id, dir);
         Ok(pane_id)
+    }
+
+    // ==================== Device Management ====================
+
+    /// Adds a connected device to tracking.
+    pub async fn add_device(&self, device: ConnectedDevice) {
+        let mut devices = self.connected_devices.write().await;
+        devices.insert(device.id.clone(), device.clone());
+        // Add to history
+        let mut security = self.security.write().await;
+        security.add_connection(&device.ip, &device.user_agent, device.connected_at);
+    }
+
+    /// Removes a connected device and marks disconnected in history.
+    pub async fn remove_device(&self, device_id: &str) {
+        let mut devices = self.connected_devices.write().await;
+        if let Some(device) = devices.remove(device_id) {
+            let disconnected_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let mut security = self.security.write().await;
+            security.mark_disconnected(&device.ip, disconnected_at, false);
+        }
+    }
+
+    /// Marks a device as disconnected (due to ban).
+    pub async fn remove_device_banned(&self, device_id: &str) {
+        let mut devices = self.connected_devices.write().await;
+        if let Some(device) = devices.remove(device_id) {
+            let disconnected_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let mut security = self.security.write().await;
+            security.mark_disconnected(&device.ip, disconnected_at, true);
+        }
+    }
+
+    /// Gets all connected devices.
+    pub async fn get_devices(&self) -> Vec<ConnectedDevice> {
+        let devices = self.connected_devices.read().await;
+        devices.values().cloned().collect()
+    }
+
+    /// Gets connection history.
+    pub async fn get_connection_history(&self) -> Vec<ConnectionHistoryEntry> {
+        let security = self.security.read().await;
+        security.history.clone()
+    }
+
+    /// Gets the device ID for a given IP address (if connected).
+    pub async fn get_device_by_ip(&self, ip: &str) -> Option<String> {
+        let devices = self.connected_devices.read().await;
+        devices.values().find(|d| d.ip == ip).map(|d| d.id.clone())
+    }
+
+    /// Bans an IP address and kicks all devices from that IP.
+    pub async fn ban_ip(&self, ip: &str) {
+        // First ban the IP
+        {
+            let mut security = self.security.write().await;
+            security.ban_ip(ip);
+        }
+
+        // Find and remove all devices from this IP
+        let devices_to_remove: Vec<String> = {
+            let devices = self.connected_devices.read().await;
+            devices.values()
+                .filter(|d| d.ip == ip)
+                .map(|d| d.id.clone())
+                .collect()
+        };
+
+        for device_id in devices_to_remove {
+            self.remove_device_banned(&device_id).await;
+        }
+    }
+
+    /// Unbans an IP address.
+    pub async fn unban_ip(&self, ip: &str) -> bool {
+        let mut security = self.security.write().await;
+        security.unban_ip(ip)
+    }
+
+    /// Gets list of banned IPs.
+    pub async fn get_banned_ips(&self) -> Vec<String> {
+        let security = self.security.read().await;
+        security.banned_ips.clone()
+    }
+
+    /// Checks if an IP is banned.
+    pub async fn is_ip_banned(&self, ip: &str) -> bool {
+        let security = self.security.read().await;
+        security.is_banned(ip)
     }
 }
 
