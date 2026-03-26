@@ -182,9 +182,53 @@ if ($termoteProc) {
     }
 }
 
-# 2. If we get here, no instances are running. Start fresh!
-Write-Host "Starting fresh Termote server..." -ForegroundColor Green
+# 2. If we get here, no instances are running. Start fresh (cold start)!
+Write-Host "Starting fresh Termote server (cold start)..." -ForegroundColor Green
+
+# Set initial directory for cold start - backend will auto-spawn first terminal here
+$env:TERMOTE_INITIAL_DIR = $cwd
+
+# Start the backend (this launches dev tunnel and backend)
 & "$termoteDir\start.ps1"
+
+# Wait for the backend to be ready, then auto-open browser
+Write-Host "Waiting for Termote backend to be ready..." -ForegroundColor DarkGray
+$isReady = $false
+for ($i = 0; $i -lt 20; $i++) {
+    try {
+        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9090/health" -UseBasicParsing -TimeoutSec 1 -EA SilentlyContinue
+        if ($resp.StatusCode -eq 200) { $isReady = $true; break }
+    } catch { }
+    Start-Sleep -Seconds 1
+}
+
+if ($isReady) {
+    # Read .env to get auth token for launch URL
+    $envFile = "$backendDir\.env"
+    $token = "unknown"
+    if (Test-Path $envFile) {
+        $content = Get-Content $envFile -Raw
+        if ($content -match 'AUTH_TOKEN=([^\s]+)') { $token = $matches[1].Trim() }
+        if ($content -match 'TUNNEL_URL=([^\s]+)') { $tunnelUrl = $matches[1].Trim() }
+    }
+
+    # Get frontend URL from environment or use default
+    $frontendUrl = if ($env:FRONTEND_URL) { $env:FRONTEND_URL } else { "https://termote.vercel.app" }
+
+    # If we have tunnel URL, construct full launch URL
+    if ($tunnelUrl) {
+        $launchUrl = "$frontendUrl/?tunnel=$([Uri]::EscapeDataString($tunnelUrl + '/ws'))&token=$token"
+    } else {
+        # Fallback to localhost
+        $launchUrl = "$frontendUrl/?tunnel=$([Uri]::EscapeDataString('ws://127.0.0.1:9090'))&token=$token"
+    }
+
+    Write-Host ""
+    Write-Host "Opening Termote in browser..." -ForegroundColor Cyan
+    Start-Process $launchUrl
+} else {
+    Write-Host "Backend failed to start within 20 seconds." -ForegroundColor Red
+}
 '@
 Set-Content -Path "$shimDir\termote.ps1" -Value $termoteShimContent -Encoding UTF8
 

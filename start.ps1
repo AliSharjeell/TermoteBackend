@@ -110,7 +110,20 @@ if (-not (Test-Path $backendExe)) {
     exit 1
 }
 Set-Location $backendDir
-Start-Process -FilePath $backendExe -WindowStyle Hidden
+
+# Pass initial directory for cold start auto-spawn
+$backendArgs = @()
+if ($env:TERMOTE_INITIAL_DIR) {
+    Write-Host "Cold start initial directory: $env:TERMOTE_INITIAL_DIR" -ForegroundColor DarkGray
+    $backendArgs += "--initial-dir"
+    $backendArgs += $env:TERMOTE_INITIAL_DIR
+}
+
+if ($backendArgs.Count -gt 0) {
+    Start-Process -FilePath $backendExe -ArgumentList $backendArgs -WindowStyle Hidden
+} else {
+    Start-Process -FilePath $backendExe -WindowStyle Hidden
+}
 
 # 9. Print launch URL
 Write-Host ""
