@@ -82,6 +82,10 @@ pub enum ClientMessage {
     /// Ban an IP address from connecting.
     #[serde(rename = "ban_device")]
     BanDevice { ip: String },
+
+    /// Upload a file to a pane's current working directory.
+    #[serde(rename = "upload_file")]
+    UploadFile { pane_id: String, file_name: String, data: String },
 }
 
 /// Server to client messages.
@@ -143,6 +147,10 @@ pub enum ServerMessage {
     /// An error occurred (e.g., device not found).
     #[serde(rename = "error")]
     Error { message: String },
+
+    /// A file was successfully uploaded to a pane's directory.
+    #[serde(rename = "file_uploaded")]
+    FileUploaded { pane_id: String, file_name: String },
 }
 
 /// Information about a connected device sent to clients.
@@ -190,6 +198,8 @@ pub struct PaneInfo {
     /// Group ID this pane belongs to (null if ungrouped).
     #[serde(rename = "groupId")]
     pub group_id: Option<String>,
+    /// Current working directory of the pane's shell.
+    pub cwd: Option<String>,
 }
 
 impl From<&Pane> for PaneInfo {
@@ -202,6 +212,7 @@ impl From<&Pane> for PaneInfo {
             cols: pane.cols,
             rows: pane.rows,
             group_id: pane.group_id.clone(),
+            cwd: pane.cwd.clone(),
         }
     }
 }
