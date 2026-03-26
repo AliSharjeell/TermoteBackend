@@ -23,6 +23,12 @@ use tracing::{info, error, warn};
 use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo};
 use crate::state::{AppState, PaneGroup};
 
+/// Decode base64 string to bytes.
+fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(input)
+}
+
 /// Maximum time to wait for authentication after connection.
 const AUTH_TIMEOUT_SECS: u64 = 5;
 
@@ -483,6 +489,57 @@ async fn handle_client_message(
                     }
                 }
                 let _ = state.broadcast_tx.send(ServerMessage::DeviceBanned { ip: ip.clone() });
+            }
+        }
+
+        ClientMessage::UploadFile { pane_id, file_name, data } => {
+            info!("Upload file request: {} to pane {}", file_name, pane_id);
+
+            // Get the pane's working directory
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            // Default to user's home directory if no cwd is set
+            let target_dir = cwd.unwrap_or_else(|| {
+                dirs::home_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| ".".to_string())
+            });
+
+            // Decode base64 data
+            let file_data = match base64_decode(&data) {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("Failed to decode base64 file data: {}", e);
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: format!("Failed to decode file data: {}", e),
+                    });
+                    return Ok(());
+                }
+            };
+
+            // Construct target file path
+            let file_path = std::path::Path::new(&target_dir).join(&file_name);
+            let file_path_str = file_path.to_string_lossy().to_string();
+
+            // Write file
+            match tokio::fs::write(&file_path, &file_data).await {
+                Ok(_) => {
+                    info!("File {} uploaded successfully to {}", file_name, file_path_str);
+                    let _ = state.broadcast_tx.send(ServerMessage::FileUploaded {
+                        pane_id: pane_id.clone(),
+                        file_name: file_name.clone(),
+                    });
+                }
+                Err(e) => {
+                    error!("Failed to write file {}: {}", file_path_str, e);
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: format!("Failed to write file: {}", e),
+                    });
+                }
             }
         }
     }
