@@ -130,6 +130,10 @@ if (-not (Test-Path $shimDir)) {
 
 $termoteShimContent = @'
 # Smart termote launcher - VS Code style single instance
+param(
+    [string]$InitialDir = ""
+)
+
 $backendDir = "$env:USERPROFILE\termote\backend"
 $termoteDir = "$env:USERPROFILE\termote\backend"
 
@@ -147,7 +151,12 @@ function Send-IpcCommand($cmd) {
     } catch { return $false }
 }
 
-$cwd = (Get-Location).Path
+# If directory was passed as argument, use it; otherwise use current location
+if ($InitialDir -and (Test-Path $InitialDir)) {
+    $cwd = $InitialDir
+} else {
+    $cwd = (Get-Location).Path
+}
 
 # 1. Check if the process exists AT ALL (prevents race conditions during boot)
 $termoteProc = Get-Process -Name "termote" -ErrorAction SilentlyContinue
@@ -344,13 +353,15 @@ Write-Host "[7/8] Adding Windows Explorer context menu..." -ForegroundColor Yell
 
 $termoteFileHandler = "$shimDir\termote-file.ps1"
 $handlerLines = @(
+    '# Context menu handler for "Open with Termote"'
     '$rawPath = $args[0]'
     'if (-not $rawPath) { $rawPath = (Get-Location).Path }'
     '# If it is a file, get the parent directory. If it is a directory, use it directly.'
     '$dir = if (Test-Path $rawPath -PathType Leaf) { Split-Path -Parent $rawPath } else { $rawPath }'
     '# Strip quotes just in case'
     '$dir = $dir -replace ''^"|"$'', '''''
-    'Start-Process powershell -ArgumentList "-NoExit","-WindowStyle","Hidden","-Command","Set-Location -LiteralPath `"$dir`"; termote" '
+    '# Pass directory directly as argument to termote (no Set-Location needed)'
+    '& "$env:USERPROFILE\.termote-bin\termote.ps1" $dir'
 )
 Set-Content -Path $termoteFileHandler -Value $handlerLines -Encoding UTF8
 
