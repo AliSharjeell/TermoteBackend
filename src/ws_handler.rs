@@ -8,12 +8,13 @@ use std::time::Duration;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        State, ConnectInfo,
     },
     response::{IntoResponse, Response, Redirect},
     routing::get,
     Router,
 };
+use std::net::SocketAddr;
 use futures_util::stream::StreamExt;
 use futures_util::sink::SinkExt;
 use tokio::sync::mpsc;
@@ -21,7 +22,7 @@ use tokio::time::timeout;
 use tracing::{info, error, warn};
 
 use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo};
-use crate::state::{AppState, PaneGroup};
+use crate::state::{AppState, ConnectedDevice, PaneGroup};
 
 /// Decode base64 string to bytes.
 fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
@@ -35,13 +36,14 @@ const AUTH_TIMEOUT_SECS: u64 = 5;
 /// WebSocket upgrade handler for /ws endpoint.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, addr))
 }
 
 /// Handles a WebSocket connection from a client.
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>, client_addr: SocketAddr) {
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
 
@@ -77,6 +79,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             }
         }
     });
+
+    // Track this device's ID once authenticated
+    let mut device_id: Option<String> = None;
 
     // Authentication state
     let mut authenticated = false;
@@ -119,6 +124,16 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                     if state.validate_token(&token).await {
                         authenticated = true;
                         info!("Client authenticated successfully");
+
+                        // Add this device to the connected devices list
+                        let ip = client_addr.ip().to_string();
+                        let device = ConnectedDevice::new(ip, String::new());
+                        device_id = Some(device.id.clone());
+                        state.add_device(device).await;
+
+                        // Broadcast updated device list to all connected clients
+                        broadcast_device_list(&state).await;
+
                         let _ = tx.send(ServerMessage::AuthResult {
                             success: true,
                             message: Some("Authenticated".to_string()),
@@ -230,8 +245,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     }
 
-    // Cleanup
+    // Cleanup - remove device from tracking and broadcast updated list
     info!("Cleaning up WebSocket session");
+    if authenticated {
+        if let Some(id) = device_id {
+            state.remove_device(&id).await;
+            broadcast_device_list(&state).await;
+        }
+    }
     sender_task.abort();
     broadcast_task.abort();
 }
@@ -248,6 +269,13 @@ async fn broadcast_state_update(state: &AppState) {
         floating_panes,
         groups,
     });
+}
+
+/// Helper to broadcast the current device list to all clients.
+async fn broadcast_device_list(state: &AppState) {
+    let devices = state.get_connected_devices().await;
+    let device_infos: Vec<DeviceInfo> = devices.iter().map(DeviceInfo::from).collect();
+    let _ = state.broadcast_tx.send(ServerMessage::DeviceList { devices: device_infos });
 }
 
 /// Handles a parsed client message.
