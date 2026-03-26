@@ -40,7 +40,35 @@ async fn run_ipc_server(state: Arc<AppState>) {
                         if n > 0 {
                             let line = line.trim();
                             info!("IPC received: {}", line);
-                            if let Some(path) = line.strip_prefix("open_dir:") {
+
+                            if line == "ban-list" {
+                                // List all banned IPs
+                                let banned = state.get_banned_ips().await;
+                                let response = if banned.is_empty() {
+                                    "No banned IPs".to_string()
+                                } else {
+                                    banned.join("\n")
+                                };
+                                let _ = stream.write_all(response.as_bytes()).await;
+                                let _ = stream.write_all(b"\n").await;
+                            } else if let Some(ip) = line.strip_prefix("ban:") {
+                                // Ban an IP address
+                                let ip = ip.trim();
+                                if state.is_ip_banned(ip).await {
+                                    let _ = stream.write_all(b"IP already banned\n").await;
+                                } else {
+                                    state.ban_ip(ip).await;
+                                    let _ = stream.write_all(b"IP banned successfully\n").await;
+                                }
+                            } else if let Some(ip) = line.strip_prefix("unban:") {
+                                // Unban an IP address
+                                let ip = ip.trim();
+                                if state.unban_ip(ip).await {
+                                    let _ = stream.write_all(b"IP unbanned successfully\n").await;
+                                } else {
+                                    let _ = stream.write_all(b"IP was not banned\n").await;
+                                }
+                            } else if let Some(path) = line.strip_prefix("open_dir:") {
                                 let path = path.trim();
                                 if let Err(e) = state.spawn_pane_at_dir(path, "powershell.exe").await {
                                     error!("Failed to spawn pane at {}: {}", path, e);
