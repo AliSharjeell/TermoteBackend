@@ -149,11 +149,15 @@ impl PtyManager {
                         if data.is_empty() {
                             break;
                         }
-                        let text = String::from_utf8_lossy(&data).to_string();
-                        tracing::debug!("PTY output ({} bytes) for pane {}", data.len(), pane_id_clone);
+                        // Avoid unnecessary string allocation: if data is valid UTF-8,
+                        // use it directly without lossy conversion. Only fall back to
+                        // lossy conversion for invalid sequences (rare on Unix, more common on Windows ConPTY).
+                        let text = String::from_utf8(data)
+                            .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).to_string());
+                        tracing::debug!("PTY output ({} bytes) for pane {}", text.len(), pane_id_clone);
 
                         // Store in scrollback buffer
-                        state_clone.append_pane_buffer(&pane_id_clone, &data).await;
+                        state_clone.append_pane_buffer(&pane_id_clone, text.as_bytes()).await;
 
                         let msg = crate::messages::ServerMessage::Output {
                             pane_id: pane_id_clone.clone(),
