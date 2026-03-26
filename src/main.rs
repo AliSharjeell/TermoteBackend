@@ -5,6 +5,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::env;
 
 use axum::serve;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -119,8 +120,32 @@ async fn main() {
     info!("Frontend URL: {}", frontend_url);
     info!("Tunnel URL: {}", tunnel_url);
 
+    // Parse CLI arguments for cold start initial directory
+    let cold_start_dir: Option<String> = env::args()
+        .skip(1) // Skip program name
+        .collect::<Vec<_>>()
+        .iter()
+        .position(|arg| arg == "--initial-dir")
+        .and_then(|idx| env::args().skip(idx + 1).next())
+        .or_else(|| {
+            // Also check --initial-dir=VALUE format
+            env::args()
+                .skip(1)
+                .find(|arg| arg.starts_with("--initial-dir="))
+                .map(|arg| arg.trim_start_matches("--initial-dir=").to_string())
+        });
+
+    if let Some(ref dir) = cold_start_dir {
+        info!("Cold start with initial directory: {}", dir);
+    }
+
     // Create application state
-    let state = Arc::new(AppState::new(auth_token.clone(), frontend_url.clone(), tunnel_url.clone()));
+    let state = Arc::new(AppState::new(
+        auth_token.clone(),
+        frontend_url.clone(),
+        tunnel_url.clone(),
+        cold_start_dir,
+    ));
 
     // Start IPC server for single-instance behavior
     let ipc_state = state.clone();
@@ -129,7 +154,7 @@ async fn main() {
     });
 
     // Create router with CORS
-    let app = create_router(state)
+    let app = create_router(state.clone())
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -157,6 +182,15 @@ async fn main() {
     // Start server
     let listener = tokio::net::TcpListener::bind(addr).await
         .expect("Failed to bind to address");
+
+    // After server starts, check if this is a cold start with an initial directory
+    // and auto-spawn the first terminal
+    if let Some(ref dir) = state.cold_start_dir {
+        info!("Cold start detected, spawning initial terminal at: {}", dir);
+        if let Err(e) = state.spawn_pane_at_dir(dir, "powershell.exe").await {
+            error!("Failed to spawn initial pane at {}: {}", dir, e);
+        }
+    }
 
     serve(listener, app)
         .await

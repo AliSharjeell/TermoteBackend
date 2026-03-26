@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(tasklist)",
+      "Bash(powershell -Command \"[System.IO.Path]::GetTempPath\\(\\)\")",
+      "Bash(ls:*)",
+      "Bash(powershell -NoProfile -Command \"Get-ChildItem -Path $env:TEMP -Filter 'termote.log.*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Write-Host 'Latest log:' $_.FullName; Get-Content $_.FullName -Tail 30 }\")",
+      "Bash(powershell -NoProfile -Command \"Get-ChildItem -Path 'C:\\\\Users\\\\alish\\\\AppData\\\\Local\\\\Temp' -Filter 'termote.log.*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Write-Host 'Latest log:' $_.FullName; Get-Content $_.FullName -Tail 30 }\")",
+      "Bash(find 'C:/Apps New/Termote' -name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js)",
+      "Bash(npm run:*)",
+      "Bash(cd:*)",
+      "Bash(node scripts/generate-blog-posts.js)"
+    ]
+  }
+}

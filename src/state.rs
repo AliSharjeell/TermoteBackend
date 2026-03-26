@@ -105,11 +105,13 @@ pub struct AppState {
     pub pty_manager: Arc<PtyManager>,
     /// Map of group ID to PaneGroup.
     pub groups: Arc<RwLock<HashMap<String, PaneGroup>>>,
+    /// Cold start: initial directory to spawn first terminal at
+    pub cold_start_dir: Option<String>,
 }
 
 impl AppState {
     /// Creates a new AppState with the given auth token.
-    pub fn new(auth_token: String, frontend_url: String, tunnel_url: String) -> Self {
+    pub fn new(auth_token: String, frontend_url: String, tunnel_url: String, cold_start_dir: Option<String>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(100);
         Self {
             panes: Arc::new(RwLock::new(HashMap::new())),
@@ -122,6 +124,7 @@ impl AppState {
             broadcast_tx: Arc::new(broadcast_tx),
             pty_manager: Arc::new(PtyManager::new()),
             groups: Arc::new(RwLock::new(HashMap::new())),
+            cold_start_dir,
         }
     }
 
@@ -386,7 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_state_pane_management() {
-        let state = AppState::new("test_token".to_string(), "http://localhost".to_string(), "ws://localhost".to_string());
+        let state = AppState::new("test_token".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None);
 
         // Initially empty
         assert!(state.get_panes_info().await.is_empty());
@@ -409,7 +412,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authentication() {
-        let state = AppState::new("secret123".to_string(), "http://localhost".to_string(), "ws://localhost".to_string());
+        let state = AppState::new("secret123".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None);
 
         assert!(!state.is_authenticated().await);
         assert!(state.validate_token("wrong").await);
