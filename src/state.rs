@@ -222,6 +222,8 @@ pub struct Pane {
     pub buffer: Vec<u8>,
     /// Group ID this pane belongs to (None if ungrouped).
     pub group_id: Option<String>,
+    /// Current working directory of this pane's shell.
+    pub cwd: Option<String>,
 }
 
 impl Pane {
@@ -237,6 +239,7 @@ impl Pane {
             rows,
             buffer: Vec::new(),
             group_id: None,
+            cwd: None,
         }
     }
 
@@ -551,9 +554,10 @@ impl AppState {
             &self.broadcast_tx,
         )?;
 
-        // Create pane with correct ID
+        // Create pane with correct ID and working directory
         let mut pane = Pane::new(pid, shell_to_use.to_string(), 80, 24);
         pane.id = pane_id.clone();
+        pane.cwd = Some(dir.to_string());
         self.add_pane(pane).await;
 
         // Wait a bit for shell to start, then cd to directory
