@@ -3,7 +3,7 @@
 //! Defines the bidirectional JSON protocol between client and server.
 
 use serde::{Deserialize, Serialize};
-use crate::state::{Pane, PaneGroup};
+use crate::state::{ConnectedDevice, Pane, PaneGroup};
 
 /// Client to server messages.
 #[derive(Deserialize, Debug)]
@@ -70,6 +70,18 @@ pub enum ClientMessage {
     /// Server opens OS dialog, spawns terminal at selected directory.
     #[serde(rename = "request_directory_picker")]
     RequestDirectoryPicker { shell: String },
+
+    /// Request the list of connected devices.
+    #[serde(rename = "get_device_list")]
+    GetDeviceList,
+
+    /// Kick a connected device (forced disconnect).
+    #[serde(rename = "kick_device")]
+    KickDevice { device_id: String },
+
+    /// Ban an IP address from connecting.
+    #[serde(rename = "ban_device")]
+    BanDevice { ip: String },
 }
 
 /// Server to client messages.
@@ -115,6 +127,49 @@ pub enum ServerMessage {
     /// Directory picker was cancelled by user.
     #[serde(rename = "directory_picker_cancelled")]
     DirectoryPickerCancelled,
+
+    /// List of connected devices (sent in response to get_device_list).
+    #[serde(rename = "device_list")]
+    DeviceList { devices: Vec<DeviceInfo> },
+
+    /// A device was kicked (forced disconnect).
+    #[serde(rename = "device_kicked")]
+    DeviceKicked { device_id: String },
+
+    /// A device was banned.
+    #[serde(rename = "device_banned")]
+    DeviceBanned { ip: String },
+
+    /// An error occurred (e.g., device not found).
+    #[serde(rename = "error")]
+    Error { message: String },
+}
+
+/// Information about a connected device sent to clients.
+#[derive(Serialize, Clone, Debug)]
+pub struct DeviceInfo {
+    /// Unique connection ID
+    pub id: String,
+    /// Client's IP address
+    pub ip: String,
+    /// Inferred device/browser info from User-Agent
+    pub device: String,
+    /// When this connection was established (Unix timestamp)
+    pub connected_at: u64,
+    /// Whether this device is currently authenticated
+    pub authenticated: bool,
+}
+
+impl From<&ConnectedDevice> for DeviceInfo {
+    fn from(device: &ConnectedDevice) -> Self {
+        DeviceInfo {
+            id: device.id.clone(),
+            ip: device.ip.clone(),
+            device: device.device_info(),
+            connected_at: device.connected_at,
+            authenticated: device.authenticated,
+        }
+    }
 }
 
 /// Information about a pane sent to clients.
