@@ -354,14 +354,16 @@ async fn handle_client_message(
         ClientMessage::ListDirectory { path } => {
             info!("List directory requested: {:?}", path);
 
-            let target_path = if let Some(p) = &path {
-                if p.is_empty() {
-                    None
-                } else {
-                    Some(p.as_str())
-                }
-            } else {
+            // Detect empty root: empty string, null, or exactly "/"
+            let is_empty_root = match &path {
+                Some(p) => p.is_empty() || p == "/",
+                None => true,
+            };
+
+            let target_path = if is_empty_root {
                 None
+            } else {
+                path.as_deref()
             };
 
             let (result_path, items) = match target_path {
@@ -414,7 +416,7 @@ async fn handle_client_message(
                             let path = std::path::Path::new(&drive);
                             if path.exists() {
                                 items.push(DirectoryItem {
-                                    name: format!("{}:", letter as char),
+                                    name: format!("{}:\\", letter as char),
                                     absolute_path: drive,
                                     is_dir: true,
                                 });
