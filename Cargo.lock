@@ -1715,6 +1715,7 @@ name = "termote"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "dirs",
  "dotenvy",
  "futures-util",
