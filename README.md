@@ -29,6 +29,9 @@ Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punchin
 | **Smart Single-Instance** | Already have Termote running? Typing `termote` in a new local folder or clicking "Open with Termote" won't spawn a redundant server. It intelligently connects to your active session and opens a new pane for that directory. |
 | **Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. Any device with a browser becomes your command center with a beautiful, responsive UI. |
 | **Runs directly on your PC (no cloud, no lag)** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
+| **Drag-and-Drop File Transfer** | Drag files directly into any terminal pane to upload them to that pane's working directory. |
+| **Security & Device Management** | View connected devices, kick sessions, and ban IP addresses directly from the UI. |
+| **Pane Groups** | Color-code and organize terminal panes into groups for easier management. |
 
 ---
 
@@ -91,6 +94,9 @@ After installation, the following commands are available in your terminal:
 | `termote-kill` | Safely shuts down all Termote instances and active tunnels. |
 | `termote-link` | Displays your active tunnel URL, password, and shareable link. |
 | `termote-log` | View real-time backend logs in your terminal. |
+| `termote-ban-list` | View all banned IP addresses. |
+| `termote-unban <ip>` | Remove an IP from the ban list. |
+| `termote-update` | Fetch and execute the latest Termote installation script from GitHub. |
 | Right-click in folder → **"Open with Termote"** | Instantly opens a new terminal pane for that specific folder in your existing web UI. |
 
 ---
