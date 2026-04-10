@@ -555,6 +555,67 @@ async fn run_git_pull(dir: &str, _pane_id: &str) -> ServerMessage {
     }
 }
 
+/// Finds all git repositories in subdirectories of a path.
+async fn run_find_git_repos(path: &str) -> ServerMessage {
+    use std::process::Command;
+    use std::path::Path;
+
+    let mut repos = vec![];
+
+    // First check if the path itself is a git repo
+    let git_dir = Path::new(path).join(".git");
+    if git_dir.exists() {
+        let branch = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(path)
+            .output()
+            .ok()
+            .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+
+        let name = Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string());
+
+        repos.push(crate::messages::GitRepoInfo {
+            path: path.to_string(),
+            name,
+            branch,
+        });
+    }
+
+    // Walk through immediate subdirectories looking for .git folders
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                let sub_git = entry_path.join(".git");
+                if sub_git.exists() {
+                    let branch = Command::new("git")
+                        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                        .current_dir(&entry_path)
+                        .output()
+                        .ok()
+                        .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+
+                    let name = entry_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| entry_path.to_string_lossy().to_string());
+
+                    repos.push(crate::messages::GitRepoInfo {
+                        path: entry_path.to_string_lossy().to_string(),
+                        name,
+                        branch,
+                    });
+                }
+            }
+        }
+    }
+
+    ServerMessage::GitReposFound { repos }
+}
+
 /// Runs git log to get commit history.
 async fn run_git_log(dir: &str, pane_id: &str) -> ServerMessage {
     use std::process::Command;
@@ -1228,6 +1289,12 @@ async fn handle_client_message(
         ClientMessage::GetSourceControlState { path } => {
             info!("Source control state requested for: {}", path);
             let result = run_source_control_state(&path).await;
+            let _ = state.broadcast_tx.send(result);
+        }
+
+        ClientMessage::FindGitRepos { path } => {
+            info!("Finding git repos in: {}", path);
+            let result = run_find_git_repos(&path).await;
             let _ = state.broadcast_tx.send(result);
         }
 

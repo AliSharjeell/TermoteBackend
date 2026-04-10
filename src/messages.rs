@@ -127,6 +127,10 @@ pub enum ClientMessage {
     /// Get full source control state for a directory.
     #[serde(rename = "get_source_control_state")]
     GetSourceControlState { path: String },
+
+    /// Find all git repositories in subdirectories.
+    #[serde(rename = "find_git_repos")]
+    FindGitRepos { path: String },
 }
 
 /// Server to client messages.
@@ -240,6 +244,20 @@ pub enum ServerMessage {
         behind: i32,
         outgoing_commits: Vec<OutgoingCommit>,
     },
+
+    /// Git repositories found in subdirectories.
+    #[serde(rename = "git_repos_found")]
+    GitReposFound {
+        repos: Vec<GitRepoInfo>,
+    },
+}
+
+/// A git repository info.
+#[derive(Serialize, Clone, Debug)]
+pub struct GitRepoInfo {
+    pub path: String,
+    pub name: String,
+    pub branch: Option<String>,
 }
 
 /// A file in source control.
