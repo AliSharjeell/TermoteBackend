@@ -265,6 +265,8 @@ pub struct GitRepoInfo {
 pub struct SourceControlFile {
     pub path: String,
     pub status: String,
+    pub added: Option<u32>,
+    pub deleted: Option<u32>,
 }
 
 /// A commit that hasn't been pushed.

@@ -716,12 +716,12 @@ async fn run_source_control_state(path: &str) -> ServerMessage {
                 let status = line[..2].to_string();
 
                 if index == "?" {
-                    untracked.push(crate::messages::SourceControlFile { path: filepath.clone(), status: "untracked".to_string() });
+                    untracked.push(crate::messages::SourceControlFile { path: filepath.clone(), status: "untracked".to_string(), added: None, deleted: None });
                 } else if index != " " {
-                    staged.push(crate::messages::SourceControlFile { path: filepath.clone(), status: status.clone() });
+                    staged.push(crate::messages::SourceControlFile { path: filepath.clone(), status: status.clone(), added: None, deleted: None });
                 }
                 if worktree != " " && worktree != "?" {
-                    unstaged.push(crate::messages::SourceControlFile { path: filepath.clone(), status });
+                    unstaged.push(crate::messages::SourceControlFile { path: filepath.clone(), status, added: None, deleted: None });
                 }
             }
         }
@@ -1517,7 +1517,12 @@ pub async fn proxy_handler(
                         response_headers.push((header::CONTENT_LENGTH, cl.clone()));
                     }
 
-                    (status, response_headers, body_bytes.to_vec()).into_response()
+                    let mut resp = axum::response::Response::new(axum::body::Body::from(body_bytes.to_vec()));
+                    *resp.status_mut() = status;
+                    for (k, v) in response_headers {
+                        resp.headers_mut().insert(k, v);
+                    }
+                    resp
                 }
                 Err(e) => {
                     error!("Proxy request body error for {}: {}", url, e);
