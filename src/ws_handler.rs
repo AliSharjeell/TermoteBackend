@@ -557,7 +557,32 @@ async fn run_git_pull(dir: &str, _pane_id: &str) -> ServerMessage {
 
 /// Finds all git repositories in subdirectories of a path.
 async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
+    use std::collections::HashMap;
     use std::process::Command;
+
+    // First get a map of PID -> process name from tasklist
+    let mut pid_to_name: HashMap<u32, String> = HashMap::new();
+    if let Ok(task_output) = Command::new("tasklist")
+        .args(["/FI", "STATUS eq Running", "/FO", "CSV", "/NH"])
+        .output()
+    {
+        if task_output.status.success() {
+            for line in String::from_utf8_lossy(&task_output.stdout).lines() {
+                // CSV format: "name","pid","session","sessionnum","memory"
+                if let Some(name) = line.strip_prefix('"') {
+                    let parts: Vec<&str> = name.split('"').collect();
+                    if parts.len() >= 2 {
+                        let name = parts[0].trim();
+                        if let Some(pid_str) = parts.get(1) {
+                            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                                pid_to_name.insert(pid, name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     let mut processes = vec![];
 
@@ -584,10 +609,13 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
                     if let Ok(pid) = parts[4].parse::<u32>() {
                         // Skip system ports (below 10000) to reduce noise
                         if port >= 10000 {
+                            let process_name = pid_to_name.get(&pid)
+                                .cloned()
+                                .unwrap_or_else(|| format!("PID:{}", pid));
                             processes.push(crate::messages::PortProcess {
                                 port,
                                 pid,
-                                process_name: format!("PID:{}", pid),
+                                process_name,
                                 cwd: None,
                             });
                         }
