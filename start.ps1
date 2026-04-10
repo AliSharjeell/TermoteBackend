@@ -67,7 +67,7 @@ if ($output -match "expired" -or $LASTEXITCODE -ne 0) {
 # 5. Start devtunnel
 Write-Host "Starting Microsoft Dev Tunnel..." -ForegroundColor Yellow
 $process = Start-Process -FilePath $devtunnelExe `
-    -ArgumentList "host", "-p", "9090", "--allow-anonymous" `
+    -ArgumentList "host", "-p", "9090", "--allow-anonymous", "--protocol", "ws" `
     -NoNewWindow -PassThru `
     -RedirectStandardOutput $tunnelLog `
     -RedirectStandardError $tunnelErrLog
