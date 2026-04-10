@@ -1,23 +1,11 @@
-﻿# Terminal Multiplexer Start Script
+# Terminal Multiplexer Start Script
 # Generates auth token, starts Microsoft Dev Tunnel, and runs the backend
 
 Write-Host ""
-Write-Host "  ████████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗" -ForegroundColor Cyan
-Write-Host "  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝" -ForegroundColor Cyan
-Write-Host "     ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗  " -ForegroundColor Cyan
-Write-Host "     ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝  " -ForegroundColor Cyan
-Write-Host "     ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗" -ForegroundColor Cyan
-Write-Host "     ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝" -ForegroundColor Cyan
+Write-Host "  TERMOTE" -ForegroundColor Cyan
+Write-Host "  =======" -ForegroundColor Cyan
+Write-Host "  Turn any browser into a full-powered, multi-pane terminal for your PC." -ForegroundColor Gray
 Write-Host ""
-Write-Host "  Turn any browser into a full-powered, multi-pane terminal for your PC — instantly. No SSH, no tmux, no setup." -ForegroundColor Gray
-Write-Host ""
-Write-Host "  Available commands:" -ForegroundColor White
-Write-Host "  - termote         : Start or connect to Termote" -ForegroundColor Cyan
-Write-Host "  - termote-kill    : Stop all Termote instances" -ForegroundColor Cyan
-Write-Host "  - termote-link   : Show tunnel URL, password & share link" -ForegroundColor Cyan
-Write-Host "  - termote-log    : View real-time backend logs" -ForegroundColor Cyan
-Write-Host "  - Right-click in folder -> 'Open with Termote'" -ForegroundColor Cyan
-
 
 $backendDir = $PSScriptRoot
 
@@ -49,10 +37,10 @@ if (-not (Test-Path $devtunnelExe)) {
     }
 }
 
-# Verify it's actually devtunnel before running it
+# Verify devtunnel works
 Write-Host "Using devtunnel: $devtunnelExe" -ForegroundColor DarkGray
 try {
-    $versionOutput = (& "$devtunnelExe" --version 2>&1) | Out-String
+    $versionOutput = & "$devtunnelExe" --version 2>&1 | Out-String
 } catch {
     $versionOutput = ""
 }
@@ -63,15 +51,15 @@ if ($versionOutput -notmatch 'version') {
 
 # 4. Check auth and re-auth if expired
 Write-Host "Checking Dev Tunnel authentication..." -ForegroundColor Yellow
-$output = & $devtunnelExe user show 2>&1
+$output = & "$devtunnelExe" user show 2>&1
 if ($output -match "expired" -or $LASTEXITCODE -ne 0) {
     Write-Host "Re-authenticating with device code..."
-    & $devtunnelExe user login -g
+    & "$devtunnelExe" user login -g
 }
 
 # 5. Start devtunnel
 Write-Host "Starting Microsoft Dev Tunnel..." -ForegroundColor Yellow
-$process = Start-Process -FilePath $devtunnelExe `
+$process = Start-Process -FilePath "$devtunnelExe" `
     -ArgumentList "host", "-p", "9090", "--allow-anonymous" `
     -NoNewWindow -PassThru `
     -RedirectStandardOutput $tunnelLog `
@@ -106,7 +94,7 @@ while (((Get-Date) - $startTime).TotalSeconds -lt 20) {
 # 7. Build WSS URL and write .env
 $wsUrl = $devtunnelUrl -replace '^https://', 'wss://'
 $env:TUNNEL_URL = $wsUrl
-Set-Content -Path "$backendDir\.env" -Value "AUTH_TOKEN=$token`nTUNNEL_URL=$wsUrl" -Encoding UTF8
+Set-Content -Path "$backendDir\.env" -Value "AUTH_TOKEN=$token`nTUNNEL_URL=$wsUrl" -Encoding ASCII
 
 # 8. Start Rust backend
 $backendExe = "$backendDir\target\release\termote.exe"
