@@ -1242,6 +1242,36 @@ async fn handle_client_message(
             let _ = state.broadcast_tx.send(ServerMessage::PortProcesses { processes });
         }
 
+        ClientMessage::KillProcess { pid } => {
+            info!("Kill process requested: PID {}", pid);
+            let output = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .output();
+            match output {
+                Ok(out) if out.status.success() => {
+                    let _ = state.broadcast_tx.send(ServerMessage::ProcessKilled {
+                        pid,
+                        success: true,
+                        message: "Process killed".to_string(),
+                    });
+                }
+                Ok(_) => {
+                    let _ = state.broadcast_tx.send(ServerMessage::ProcessKilled {
+                        pid,
+                        success: false,
+                        message: "Failed to kill process".to_string(),
+                    });
+                }
+                Err(e) => {
+                    let _ = state.broadcast_tx.send(ServerMessage::ProcessKilled {
+                        pid,
+                        success: false,
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+
         ClientMessage::KickDevice { device_id } => {
             info!("Kick device requested: {}", device_id);
             // Check if device exists before removing

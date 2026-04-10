@@ -135,6 +135,10 @@ pub enum ClientMessage {
     /// Get list of processes running on ports.
     #[serde(rename = "get_port_processes")]
     GetPortProcesses,
+
+    /// Kill a process by PID.
+    #[serde(rename = "kill_process")]
+    KillProcess { pid: u32 },
 }
 
 /// Server to client messages.
@@ -259,6 +263,14 @@ pub enum ServerMessage {
     #[serde(rename = "port_processes")]
     PortProcesses {
         processes: Vec<PortProcess>,
+    },
+
+    /// Process was killed.
+    #[serde(rename = "process_killed")]
+    ProcessKilled {
+        pid: u32,
+        success: bool,
+        message: String,
     },
 }
 
