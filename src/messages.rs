@@ -131,6 +131,10 @@ pub enum ClientMessage {
     /// Find all git repositories in subdirectories.
     #[serde(rename = "find_git_repos")]
     FindGitRepos { path: String },
+
+    /// Get list of processes running on ports.
+    #[serde(rename = "get_port_processes")]
+    GetPortProcesses,
 }
 
 /// Server to client messages.
@@ -249,6 +253,12 @@ pub enum ServerMessage {
     #[serde(rename = "git_repos_found")]
     GitReposFound {
         repos: Vec<GitRepoInfo>,
+    },
+
+    /// List of processes on ports.
+    #[serde(rename = "port_processes")]
+    PortProcesses {
+        processes: Vec<PortProcess>,
     },
 }
 
@@ -393,4 +403,13 @@ pub struct GitCommitInfo {
     pub message: String,
     pub author: String,
     pub date: String,
+}
+
+/// A process running on a port.
+#[derive(Serialize, Clone, Debug)]
+pub struct PortProcess {
+    pub port: u16,
+    pub pid: u32,
+    pub process_name: String,
+    pub cwd: Option<String>,
 }
