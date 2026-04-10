@@ -320,6 +320,34 @@ async fn handle_client_message(
             // spawn_pane_at_dir already broadcasts state_update
         }
 
+        ClientMessage::SpawnBrowser { url } => {
+            info!("Spawn browser request: {}", url);
+
+            #[cfg(windows)]
+            {
+                use std::process::Command;
+                // Open URL in default browser using cmd /c start
+                let result = Command::new("cmd")
+                    .args(["/c", "start", "", &url])
+                    .spawn();
+
+                match result {
+                    Ok(child) => {
+                        info!("Browser opened with PID: {:?}", child.id());
+                        let _ = state.broadcast_tx.send(ServerMessage::Error {
+                            message: format!("Opened {} in browser", url),
+                        });
+                    }
+                    Err(e) => {
+                        error!("Failed to open browser: {}", e);
+                        let _ = state.broadcast_tx.send(ServerMessage::Error {
+                            message: format!("Failed to open browser: {}", e),
+                        });
+                    }
+                }
+            }
+        }
+
         ClientMessage::RequestDirectoryPicker { shell } => {
             info!("Directory picker requested for shell: {}", shell);
 

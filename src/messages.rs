@@ -21,6 +21,10 @@ pub enum ClientMessage {
     #[serde(rename = "spawn_at_dir")]
     SpawnAtDir { shell: String, dir: String },
 
+    /// Spawn a browser tab at a specific URL.
+    #[serde(rename = "spawn_browser")]
+    SpawnBrowser { url: String },
+
     /// Send input data to a specific pane.
     #[serde(rename = "input")]
     Input { pane_id: String, data: String },
