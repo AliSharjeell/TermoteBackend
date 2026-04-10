@@ -473,6 +473,8 @@ async fn handle_client_message(
 
                 // Broadcast state update to all clients
                 broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
             }
         }
 
@@ -489,6 +491,8 @@ async fn handle_client_message(
 
             // Broadcast state update to all clients
             broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
         }
 
         ClientMessage::MoveToFloating { pane_id } => {
@@ -497,6 +501,8 @@ async fn handle_client_message(
 
             // Broadcast state update to all clients
             broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
         }
 
         ClientMessage::MoveToActive { pane_id } => {
@@ -505,6 +511,8 @@ async fn handle_client_message(
 
             // Broadcast state update to all clients
             broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
         }
 
         ClientMessage::Rename { pane_id, name } => {
@@ -513,6 +521,8 @@ async fn handle_client_message(
 
             // Broadcast state update to all clients
             broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
         }
 
         ClientMessage::Refocus { pane_id, cols, rows } => {
@@ -525,6 +535,8 @@ async fn handle_client_message(
 
             // Broadcast to ALL clients (including sender) so everyone updates
             broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
         }
 
         ClientMessage::Auth { .. } => {
@@ -556,6 +568,8 @@ async fn handle_client_message(
 
             // Broadcast state update to sync groups
             broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
         }
 
         ClientMessage::DeleteGroup { group_id } => {
@@ -566,6 +580,8 @@ async fn handle_client_message(
 
                 // Broadcast state update to sync groups
                 broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
             }
         }
 
@@ -577,6 +593,8 @@ async fn handle_client_message(
 
                 // Broadcast state update to sync groups
                 broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
             }
         }
 
@@ -588,6 +606,8 @@ async fn handle_client_message(
 
                 // Broadcast state update to sync groups
                 broadcast_state_update(state).await;
+            // Persist session state
+            state.save_session().await;
             }
         }
 
