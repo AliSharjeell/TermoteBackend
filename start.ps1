@@ -1,4 +1,4 @@
-﻿# Terminal Multiplexer Start Script
+# Terminal Multiplexer Start Script
 # Generates auth token, starts Microsoft Dev Tunnel, and runs the backend
 
 Write-Host ""
@@ -120,9 +120,9 @@ if ($env:TERMOTE_INITIAL_DIR) {
 }
 
 if ($backendArgs.Count -gt 0) {
-    Start-Process -FilePath $backendExe -ArgumentList $backendArgs -WindowStyle Hidden
+    Start-Process -FilePath $backendExe -ArgumentList $backendArgs -WorkingDirectory $backendDir -WindowStyle Hidden
 } else {
-    Start-Process -FilePath $backendExe -WindowStyle Hidden
+    Start-Process -FilePath $backendExe -WorkingDirectory $backendDir -WindowStyle Hidden
 }
 
 # 9. Print launch URL
