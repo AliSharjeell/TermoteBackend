@@ -1,6 +1,7 @@
 //! WebSocket message handling for the terminal multiplexer.
 //!
 //! Handles client connections, authentication, and message routing.
+//! Includes tunnel-check endpoint for Dev Tunnel session establishment.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -708,6 +709,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/ws", get(ws_handler))
         .route("/health", get(health_handler))
+        .route("/tunnel-check", get(tunnel_check_handler))
         .route("/launch", get(launch_handler))
         .with_state(state)
 }
@@ -715,6 +717,26 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 /// Health check handler.
 pub async fn health_handler() -> &'static str {
     "OK"
+}
+
+/// Tunnel connectivity check handler.
+/// Returns JSON response with CORS headers to help frontend establish
+/// Dev Tunnel session before attempting WebSocket connection.
+/// Dev Tunnels require an initial HTTP request to set cookies/session.
+pub async fn tunnel_check_handler() -> Response {
+    use axum::http::{header, StatusCode};
+    let body = r#"{"status":"ok","ws_ready":true}"#;
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (header::ACCESS_CONTROL_ALLOW_METHODS, "GET, OPTIONS"),
+            (header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+            (header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+        ],
+        body,
+    ).into_response()
 }
 
 /// Launch handler - redirects to frontend with credentials for auto-login.
