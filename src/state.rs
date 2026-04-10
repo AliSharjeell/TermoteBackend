@@ -332,39 +332,67 @@ impl AppState {
 
         let session_path = config_dir.join("session.json");
 
-        // Load persisted session state
-        let (panes_map, active_list, floating_list, groups_map) = if session_path.exists() {
+        // Load persisted session state - collect pane info first for respawning
+        let loaded_panes_info: Vec<PaneInfo> = if session_path.exists() {
             match fs::read_to_string(&session_path) {
                 Ok(contents) => {
                     match serde_json::from_str::<SessionState>(&contents) {
                         Ok(session) => {
-                            info!("Loaded persisted session state");
-                            let panes: HashMap<String, Pane> = session.panes.into_iter().map(|p| {
-                                let mut pane = Pane::new(p.pid, p.shell, p.cols, p.rows);
-                                pane.id = p.id.clone();
-                                pane.name = p.name;
-                                pane.group_id = p.group_id;
-                                pane.cwd = p.cwd;
-                                (p.id.clone(), pane)
-                            }).collect();
-                            (Arc::new(RwLock::new(panes)), Arc::new(RwLock::new(session.active_panes)), Arc::new(RwLock::new(session.floating_panes)), Arc::new(RwLock::new(session.groups.into_iter().map(|g| (g.id.clone(), PaneGroup::from(g))).collect())))
+                            info!("Loaded persisted session state with {} panes", session.panes.len());
+                            session.panes
                         }
                         Err(e) => {
                             warn!("Failed to parse session state: {}", e);
-                            (Arc::new(RwLock::new(HashMap::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(HashMap::new())))
+                            Vec::new()
                         }
                     }
                 }
                 Err(e) => {
                     warn!("Failed to read session file: {}", e);
-                    (Arc::new(RwLock::new(HashMap::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(HashMap::new())))
+                    Vec::new()
                 }
             }
         } else {
-            (Arc::new(RwLock::new(HashMap::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(HashMap::new())))
+            Vec::new()
         };
 
-        Self {
+        let active_list: Arc<RwLock<Vec<String>>>;
+        let floating_list: Arc<RwLock<Vec<String>>>;
+        let groups_map: Arc<RwLock<HashMap<String, PaneGroup>>>;
+
+        // We need to load groups and active/floating lists from session too
+        if session_path.exists() {
+            match fs::read_to_string(&session_path) {
+                Ok(contents) => {
+                    match serde_json::from_str::<SessionState>(&contents) {
+                        Ok(session) => {
+                            active_list = Arc::new(RwLock::new(session.active_panes));
+                            floating_list = Arc::new(RwLock::new(session.floating_panes));
+                            groups_map = Arc::new(RwLock::new(session.groups.into_iter()
+                                .map(|g| (g.id.clone(), PaneGroup::from(g))).collect()));
+                        }
+                        Err(_) => {
+                            active_list = Arc::new(RwLock::new(Vec::new()));
+                            floating_list = Arc::new(RwLock::new(Vec::new()));
+                            groups_map = Arc::new(RwLock::new(HashMap::new()));
+                        }
+                    }
+                }
+                Err(_) => {
+                    active_list = Arc::new(RwLock::new(Vec::new()));
+                    floating_list = Arc::new(RwLock::new(Vec::new()));
+                    groups_map = Arc::new(RwLock::new(HashMap::new()));
+                }
+            }
+        } else {
+            active_list = Arc::new(RwLock::new(Vec::new()));
+            floating_list = Arc::new(RwLock::new(Vec::new()));
+            groups_map = Arc::new(RwLock::new(HashMap::new()));
+        };
+
+        let panes_map = Arc::new(RwLock::new(HashMap::new()));
+
+        let state = Self {
             panes: panes_map,
             active_panes: active_list,
             floating_panes: floating_list,
@@ -379,7 +407,74 @@ impl AppState {
             connected_devices: Arc::new(RwLock::new(HashMap::new())),
             security: Arc::new(RwLock::new(SecurityState::new(config_dir))),
             session_path,
+        };
+
+        // Respawn all panes at their saved directories
+        for pane_info in loaded_panes_info {
+            if let Some(ref cwd) = pane_info.cwd {
+                let dir = cwd.clone();
+                let shell = pane_info.shell.clone();
+                let pane_id = pane_info.id.clone();
+                let group_id = pane_info.group_id.clone();
+                let name = pane_info.name.clone();
+                let cols = pane_info.cols;
+                let rows = pane_info.rows;
+
+                // Spawn the pane at its saved directory
+                match state.pty_manager.spawn_pty(&shell, cols, rows, state.clone(), &state.broadcast_tx) {
+                    Ok((new_pane_id, pid)) => {
+                        let mut pane = Pane::new(pid, shell.clone(), cols, rows);
+                        pane.id = new_pane_id.clone();
+                        pane.name = name;
+                        pane.group_id = group_id;
+                        pane.cwd = Some(dir.clone());
+
+                        // Add to panes map
+                        state.panes.write().await.insert(new_pane_id.clone(), pane);
+
+                        // cd to the directory after a short delay
+                        let pty_manager = state.pty_manager.clone();
+                        let new_pane_id_clone = new_pane_id.clone();
+                        let dir_clone = dir.clone();
+
+                        tokio::spawn(async move {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                            #[cfg(windows)]
+                            let cd_cmd = format!("cd '{}'; Clear-Host\r\n", dir_clone.replace("'", "''"));
+                            #[cfg(not(windows))]
+                            let cd_cmd = format!("cd '{}'; clear\r\n", dir_clone.replace("'", "\\'"));
+
+                            if let Err(e) = pty_manager.write_input_raw(&new_pane_id_clone, &cd_cmd) {
+                                tracing::error!("Failed to cd to directory {}: {}", dir_clone, e);
+                            }
+                        });
+
+                        info!("Respawned pane {} at directory {}", new_pane_id, dir);
+                    }
+                    Err(e) => {
+                        warn!("Failed to respawn pane {} at {}: {}", pane_id, cwd, e);
+                    }
+                }
+            } else {
+                // Spawn without specific directory
+                match state.pty_manager.spawn_pty(&pane_info.shell, pane_info.cols, pane_info.rows, state.clone(), &state.broadcast_tx) {
+                    Ok((new_pane_id, pid)) => {
+                        let mut pane = Pane::new(pid, pane_info.shell.clone(), pane_info.cols, pane_info.rows);
+                        pane.id = new_pane_id.clone();
+                        pane.name = pane_info.name.clone();
+                        pane.group_id = pane_info.group_id;
+                        pane.cwd = None;
+                        state.panes.write().await.insert(new_pane_id.clone(), pane);
+                        info!("Respawned pane {} without specific directory", new_pane_id);
+                    }
+                    Err(e) => {
+                        warn!("Failed to respawn pane {}: {}", pane_info.id, e);
+                    }
+                }
+            }
         }
+
+        state
     }
 
     /// Saves session state to disk (called on pane changes)
