@@ -1410,6 +1410,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health_handler))
         .route("/tunnel-check", get(tunnel_check_handler))
         .route("/launch", get(launch_handler))
+        .route("/proxy", get(proxy_handler))
         .with_state(state)
 }
 
@@ -1454,4 +1455,79 @@ pub async fn launch_handler(State(state): State<Arc<AppState>>) -> Response {
     info!("Launch redirect to: {}", redirect_url);
 
     Redirect::to(&redirect_url).into_response()
+}
+
+/// Proxy handler - forwards HTTP requests from the browser pane through the backend.
+/// This allows the browser pane to access localhost URLs from the viewing device.
+pub async fn proxy_handler(
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    use axum::http::{header, StatusCode, header::HeaderValue};
+
+    let url = match params.get("url") {
+        Some(u) => u,
+        None => {
+            return (StatusCode::BAD_REQUEST, [(header::CONTENT_TYPE, "text/plain")], "Missing url parameter").into_response();
+        }
+    };
+
+    // Validate the URL is allowed - only allow localhost and local IPs for security
+    // Extract host from URL manually (format: http://host:port/path)
+    let host = url.trim_start_matches("http://").trim_start_matches("https://").split(':').next().unwrap_or("").split('/').next().unwrap_or("");
+    let is_localhost = host == "localhost" || host == "127.0.0.1" || host == "::1";
+
+    // Allow access to localhost, 127.0.0.1, and local network IPs
+    let allowed = is_localhost
+        || host.starts_with("192.168.")
+        || host.starts_with("10.")
+        || host.starts_with("172.16.") || host.starts_with("172.17.") || host.starts_with("172.18.")
+        || host.starts_with("172.19.") || host.starts_with("172.20.") || host.starts_with("172.21.")
+        || host.starts_with("172.22.") || host.starts_with("172.23.") || host.starts_with("172.24.")
+        || host.starts_with("172.25.") || host.starts_with("172.26.") || host.starts_with("172.27.")
+        || host.starts_with("172.28.") || host.starts_with("172.29.") || host.starts_with("172.30.")
+        || host.starts_with("172.31.")
+        || host.ends_with(".local");
+
+    if !allowed && !is_localhost {
+        warn!("Proxy blocked request to non-local host: {}", url);
+        return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], "Only local URLs allowed").into_response();
+    }
+
+    // Make the proxied request using the local machine's network
+    match reqwest::get(url).await {
+        Ok(resp) => {
+            let status = resp.status();
+            let headers = resp.headers().clone();
+            let body = resp.bytes().await;
+
+            match body {
+                Ok(body_bytes) => {
+                    // Build response headers - filter out problematic ones
+                    let mut response_headers = vec![
+                        (header::CONTENT_TYPE, HeaderValue::from_str(
+                            headers.get(header::CONTENT_TYPE)
+                                .map(|v| v.to_str().unwrap_or("text/html"))
+                                .unwrap_or("text/html")
+                        ).unwrap_or(HeaderValue::from_static("text/html"))),
+                        (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
+                    ];
+
+                    // Copy content-length if present
+                    if let Some(cl) = headers.get(header::CONTENT_LENGTH) {
+                        response_headers.push((header::CONTENT_LENGTH, cl.clone()));
+                    }
+
+                    (status, response_headers, body_bytes.to_vec()).into_response()
+                }
+                Err(e) => {
+                    error!("Proxy request body error for {}: {}", url, e);
+                    (StatusCode::BAD_GATEWAY, [(header::CONTENT_TYPE, "text/plain")], format!("Upstream error: {}", e)).into_response()
+                }
+            }
+        }
+        Err(e) => {
+            error!("Proxy request failed for {}: {}", url, e);
+            (StatusCode::BAD_GATEWAY, [(header::CONTENT_TYPE, "text/plain")], format!("Connection failed: {}", e)).into_response()
+        }
+    }
 }
