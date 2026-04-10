@@ -556,6 +556,51 @@ async fn run_git_pull(dir: &str, _pane_id: &str) -> ServerMessage {
 }
 
 /// Finds all git repositories in subdirectories of a path.
+async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
+    use std::process::Command;
+
+    let mut processes = vec![];
+
+    // Use netstat to find listening ports with process IDs
+    let output = Command::new("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .output()
+        .ok();
+
+    let Some(output) = output else { return processes };
+    if !output.status.success() { return processes }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // netstat -ano output: Proto Local Address Foreign Address State PID
+        // Example: TCP 0.0.0.0:3000 0.0.0.0:0 LISTENING 12345
+        if parts.len() >= 5 && parts[3] == "LISTENING" {
+            let local_addr = parts[1];
+            // Extract port from local address like "0.0.0.0:3000" or "[::]:3000"
+            if let Some(colon_pos) = local_addr.rfind(':') {
+                if let Ok(port) = local_addr[colon_pos + 1..].parse::<u16>() {
+                    if let Ok(pid) = parts[4].parse::<u32>() {
+                        // Skip system ports (below 10000) to reduce noise
+                        if port >= 10000 {
+                            processes.push(crate::messages::PortProcess {
+                                port,
+                                pid,
+                                process_name: format!("PID:{}", pid),
+                                cwd: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    processes.sort_by_key(|p| p.port);
+    processes
+}
+
 async fn run_find_git_repos(path: &str) -> ServerMessage {
     use std::process::Command;
     use std::path::Path;
@@ -1161,6 +1206,12 @@ async fn handle_client_message(
             let devices = state.get_connected_devices().await;
             let device_infos: Vec<DeviceInfo> = devices.iter().map(DeviceInfo::from).collect();
             let _ = state.broadcast_tx.send(ServerMessage::DeviceList { devices: device_infos });
+        }
+
+        ClientMessage::GetPortProcesses => {
+            info!("Port processes requested");
+            let processes = run_get_port_processes().await;
+            let _ = state.broadcast_tx.send(ServerMessage::PortProcesses { processes });
         }
 
         ClientMessage::KickDevice { device_id } => {
