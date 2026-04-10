@@ -1,0 +1,147 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775817028308,
+  "projectRoot": "C:\\AppsNew\\TermoteFull\\Termote",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": "1.75",
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "axum",
+        "version": null,
+        "category": "backend"
+      }
+    ],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "backend": {
+      "path": "backend",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775817027987,
+      "keyFiles": [
+        "cloudflared.exe"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 7,
+      "lastAccessed": 1775817027991,
+      "keyFiles": [
+        "auth.rs",
+        "lib.rs",
+        "main.rs",
+        "messages.rs",
+        "pty_manager.rs"
+      ]
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775817028006,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src\\state.rs",
+      "accessCount": 34,
+      "lastAccessed": 1775826955057,
+      "type": "file"
+    },
+    {
+      "path": "src\\ws_handler.rs",
+      "accessCount": 28,
+      "lastAccessed": 1775852709709,
+      "type": "file"
+    },
+    {
+      "path": "install.ps1",
+      "accessCount": 17,
+      "lastAccessed": 1775831870660,
+      "type": "file"
+    },
+    {
+      "path": "start.ps1",
+      "accessCount": 7,
+      "lastAccessed": 1775822181326,
+      "type": "file"
+    },
+    {
+      "path": "src\\pty_manager.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775826893665,
+      "type": "directory"
+    },
+    {
+      "path": "src\\main.rs",
+      "accessCount": 4,
+      "lastAccessed": 1775826658481,
+      "type": "directory"
+    },
+    {
+      "path": "src",
+      "accessCount": 2,
+      "lastAccessed": 1775826580684,
+      "type": "directory"
+    },
+    {
+      "path": "src\\messages.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775826637001,
+      "type": "directory"
+    },
+    {
+      "path": "termote-update.ps1",
+      "accessCount": 1,
+      "lastAccessed": 1775821930155,
+      "type": "file"
+    },
+    {
+      "path": "src\\lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775822448898,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}

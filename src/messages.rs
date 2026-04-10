@@ -99,6 +99,14 @@ pub enum ClientMessage {
     /// Upload a file to a pane's current working directory.
     #[serde(rename = "upload_file")]
     UploadFile { pane_id: String, file_name: String, data: String },
+
+    /// Get git status for a pane's directory.
+    #[serde(rename = "get_git_status")]
+    GetGitStatus { pane_id: String },
+
+    /// Commit staged changes with a message.
+    #[serde(rename = "git_commit")]
+    GitCommit { pane_id: String, message: String },
 }
 
 /// Server to client messages.
@@ -171,6 +179,24 @@ pub enum ServerMessage {
     /// A file was successfully uploaded to a pane's directory.
     #[serde(rename = "file_uploaded")]
     FileUploaded { pane_id: String, file_name: String },
+
+    /// Git status response for a directory.
+    #[serde(rename = "git_status")]
+    GitStatus {
+        pane_id: String,
+        dir: String,
+        is_repo: bool,
+        branch: Option<String>,
+        staged: Vec<String>,
+        unstaged: Vec<String>,
+        untracked: Vec<String>,
+        ahead: Option<i32>,
+        behind: Option<i32>,
+    },
+
+    /// Git commit result.
+    #[serde(rename = "git_commit_result")]
+    GitCommitResult { pane_id: String, success: bool, message: String },
 }
 
 /// Information about a connected device sent to clients.

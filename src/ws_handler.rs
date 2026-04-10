@@ -279,6 +279,180 @@ async fn broadcast_device_list(state: &AppState) {
     let _ = state.broadcast_tx.send(ServerMessage::DeviceList { devices: device_infos });
 }
 
+/// Runs git status and returns parsed result.
+async fn run_git_status(dir: &str, pane_id: &str) -> ServerMessage {
+    use std::process::Command;
+
+    // Check if it's a git repo
+    let git_dir = std::path::Path::new(dir).join(".git");
+    if !git_dir.exists() {
+        return ServerMessage::GitStatus {
+            pane_id: pane_id.to_string(),
+            dir: dir.to_string(),
+            is_repo: false,
+            branch: None,
+            staged: vec![],
+            unstaged: vec![],
+            untracked: vec![],
+            ahead: None,
+            behind: None,
+        };
+    }
+
+    // Get branch name
+    let branch = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(dir)
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+
+    // Get status --porcelain for easy parsing
+    let status_output = Command::new("git")
+        .args(["status", "--porcelain=v1"])
+        .current_dir(dir)
+        .output()
+        .ok();
+
+    let (staged, unstaged, untracked) = if let Some(output) = status_output {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut s = Vec::new();
+            let mut u = Vec::new();
+            let mut n = Vec::new();
+
+            for line in stdout.lines() {
+                if line.len() < 3 {
+                    continue;
+                }
+                let index = &line[..1];
+                let worktree = &line[1..2];
+                let filepath = line[3..].to_string();
+
+                // Staged (index) changes
+                if index != " " && index != "?" {
+                    s.push(filepath.clone());
+                }
+                // Untracked files
+                if index == "?" {
+                    n.push(filepath.clone());
+                }
+                // Unstaged (worktree) changes
+                if worktree != " " && worktree != "?" {
+                    u.push(filepath.clone());
+                }
+            }
+            (s, u, n)
+        } else {
+            (vec![], vec![], vec![])
+        }
+    } else {
+        (vec![], vec![], vec![])
+    };
+
+    // Get ahead/behind vs remote
+    let (ahead, behind) = if branch.is_some() {
+        let rev_output = Command::new("git")
+            .args(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+            .current_dir(dir)
+            .output()
+            .ok()
+            .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+
+        if let Some(rev_str) = rev_output {
+            let parts: Vec<&str> = rev_str.split_whitespace().collect();
+            if parts.len() == 2 {
+                let ahead_val = parts[0].parse::<i32>().ok();
+                let behind_val = parts[1].parse::<i32>().ok();
+                (ahead_val, behind_val)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    ServerMessage::GitStatus {
+        pane_id: pane_id.to_string(),
+        dir: dir.to_string(),
+        is_repo: true,
+        branch,
+        staged,
+        unstaged,
+        untracked,
+        ahead,
+        behind,
+    }
+}
+
+/// Runs git commit for staged changes.
+async fn run_git_commit(dir: &str, pane_id: &str, message: &str) -> ServerMessage {
+    use std::process::Command;
+
+    // First check if there are staged changes
+    let status_output = Command::new("git")
+        .args(["status", "--porcelain=v1", "-s"])
+        .current_dir(dir)
+        .output();
+
+    let has_staged = if let Ok(output) = status_output {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            stdout.lines().any(|line| {
+                if line.len() < 3 { return false; }
+                let index = &line[..1];
+                index != " " && index != "?"
+            })
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !has_staged {
+        return ServerMessage::GitCommitResult {
+            pane_id: pane_id.to_string(),
+            success: false,
+            message: "No staged changes to commit".to_string(),
+        };
+    }
+
+    // Run git commit
+    let commit_output = Command::new("git")
+        .args(["commit", "-m", message])
+        .current_dir(dir)
+        .output();
+
+    match commit_output {
+        Ok(output) => {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                ServerMessage::GitCommitResult {
+                    pane_id: pane_id.to_string(),
+                    success: true,
+                    message: stdout.to_string(),
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                ServerMessage::GitCommitResult {
+                    pane_id: pane_id.to_string(),
+                    success: false,
+                    message: format!("Commit failed: {}", stderr),
+                }
+            }
+        }
+        Err(e) => ServerMessage::GitCommitResult {
+            pane_id: pane_id.to_string(),
+            success: false,
+            message: format!("Failed to execute git commit: {}", e),
+        },
+    }
+}
+
 /// Handles a parsed client message.
 async fn handle_client_message(
     msg: ClientMessage,
@@ -674,6 +848,52 @@ async fn handle_client_message(
                     }
                 }
                 let _ = state.broadcast_tx.send(ServerMessage::DeviceBanned { ip: ip.clone() });
+            }
+        }
+
+        ClientMessage::GetGitStatus { pane_id } => {
+            info!("Git status requested for pane: {}", pane_id);
+
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            match cwd {
+                Some(dir) => {
+                    let result = run_git_status(&dir, &pane_id).await;
+                    let _ = state.broadcast_tx.send(result);
+                }
+                None => {
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: "Pane has no working directory".to_string(),
+                    });
+                }
+            }
+        }
+
+        ClientMessage::GitCommit { pane_id, message } => {
+            info!("Git commit requested for pane: {}", pane_id);
+
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            match cwd {
+                Some(dir) => {
+                    let result = run_git_commit(&dir, &pane_id, &message).await;
+                    let _ = state.broadcast_tx.send(result);
+                }
+                None => {
+                    let _ = state.broadcast_tx.send(ServerMessage::GitCommitResult {
+                        pane_id: pane_id.clone(),
+                        success: false,
+                        message: "Pane has no working directory".to_string(),
+                    });
+                }
             }
         }
 
