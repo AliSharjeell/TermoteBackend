@@ -173,7 +173,7 @@ async fn main() {
         frontend_url.clone(),
         tunnel_url.clone(),
         cold_start_dir,
-    ));
+    ).await);
 
     // Start IPC server for single-instance behavior
     let ipc_state = state.clone();

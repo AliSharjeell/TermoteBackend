@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{broadcast, RwLock};
+use tracing::{info, warn, debug};
 use uuid::Uuid;
 
 use crate::messages::{PaneInfo, PaneGroupInfo};
@@ -204,7 +205,7 @@ impl SecurityState {
 }
 
 /// A single terminal pane with its associated PTY and state.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Pane {
     /// Unique identifier for the pane.
     pub id: String,
@@ -256,7 +257,7 @@ impl Pane {
 }
 
 /// A group of panes with a name and color.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PaneGroup {
     /// Unique identifier for the group.
     pub id: String,
@@ -306,11 +307,22 @@ pub struct AppState {
     pub connected_devices: Arc<RwLock<HashMap<String, ConnectedDevice>>>,
     /// Security state (ban list, history)
     pub security: Arc<RwLock<SecurityState>>,
+    /// Session state persistence path
+    session_path: PathBuf,
+}
+
+/// Session state for persistence (simplified - no PTY state)
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct SessionState {
+    panes: Vec<PaneInfo>,
+    active_panes: Vec<String>,
+    floating_panes: Vec<String>,
+    groups: Vec<PaneGroupInfo>,
 }
 
 impl AppState {
     /// Creates a new AppState with the given auth token.
-    pub fn new(auth_token: String, frontend_url: String, tunnel_url: String, cold_start_dir: Option<String>) -> Self {
+    pub async fn new(auth_token: String, frontend_url: String, tunnel_url: String, cold_start_dir: Option<String>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(100);
 
         // Initialize config directory for security state
@@ -318,20 +330,90 @@ impl AppState {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("termote");
 
+        let session_path = config_dir.join("session.json");
+
+        // Load persisted session state
+        let (panes_map, active_list, floating_list, groups_map) = if session_path.exists() {
+            match fs::read_to_string(&session_path) {
+                Ok(contents) => {
+                    match serde_json::from_str::<SessionState>(&contents) {
+                        Ok(session) => {
+                            info!("Loaded persisted session state");
+                            let panes: HashMap<String, Pane> = session.panes.into_iter().map(|p| {
+                                let mut pane = Pane::new(p.pid, p.shell, p.cols, p.rows);
+                                pane.id = p.id.clone();
+                                pane.name = p.name;
+                                pane.group_id = p.group_id;
+                                pane.cwd = p.cwd;
+                                (p.id.clone(), pane)
+                            }).collect();
+                            (Arc::new(RwLock::new(panes)), Arc::new(RwLock::new(session.active_panes)), Arc::new(RwLock::new(session.floating_panes)), Arc::new(RwLock::new(session.groups.into_iter().map(|g| (g.id.clone(), PaneGroup::from(g))).collect())))
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse session state: {}", e);
+                            (Arc::new(RwLock::new(HashMap::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(HashMap::new())))
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to read session file: {}", e);
+                    (Arc::new(RwLock::new(HashMap::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(HashMap::new())))
+                }
+            }
+        } else {
+            (Arc::new(RwLock::new(HashMap::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(Vec::new())), Arc::new(RwLock::new(HashMap::new())))
+        };
+
         Self {
-            panes: Arc::new(RwLock::new(HashMap::new())),
-            active_panes: Arc::new(RwLock::new(Vec::new())),
-            floating_panes: Arc::new(RwLock::new(Vec::new())),
+            panes: panes_map,
+            active_panes: active_list,
+            floating_panes: floating_list,
             authenticated: Arc::new(RwLock::new(false)),
             auth_token,
             frontend_url,
             tunnel_url,
             broadcast_tx: Arc::new(broadcast_tx),
             pty_manager: Arc::new(PtyManager::new()),
-            groups: Arc::new(RwLock::new(HashMap::new())),
+            groups: groups_map,
             cold_start_dir,
             connected_devices: Arc::new(RwLock::new(HashMap::new())),
             security: Arc::new(RwLock::new(SecurityState::new(config_dir))),
+            session_path,
+        }
+    }
+
+    /// Saves session state to disk (called on pane changes)
+    pub async fn save_session(&self) {
+        let panes = self.panes.read().await;
+        let active = self.active_panes.read().await;
+        let floating = self.floating_panes.read().await;
+        let groups = self.groups.read().await;
+
+        let panes_info: Vec<PaneInfo> = panes.values().map(|p| PaneInfo {
+            id: p.id.clone(),
+            pid: p.pid,
+            shell: p.shell.clone(),
+            name: p.name.clone(),
+            cols: p.cols,
+            rows: p.rows,
+            group_id: p.group_id.clone(),
+            cwd: p.cwd.clone(),
+        }).collect();
+        let groups_info: Vec<PaneGroupInfo> = groups.values().map(|g| PaneGroupInfo::from(g)).collect();
+
+        let session = SessionState {
+            panes: panes_info,
+            active_panes: active.clone(),
+            floating_panes: floating.clone(),
+            groups: groups_info,
+        };
+
+        if let Ok(json) = serde_json::to_string_pretty(&session) {
+            if let Err(e) = fs::write(&self.session_path, json) {
+                warn!("Failed to save session: {}", e);
+            } else {
+                debug!("Session state saved");
+            }
         }
     }
 
@@ -697,7 +779,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_state_pane_management() {
-        let state = AppState::new("test_token".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None);
+        let state = AppState::new("test_token".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None).await;
 
         // Initially empty
         assert!(state.get_panes_info().await.is_empty());
@@ -720,7 +802,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authentication() {
-        let state = AppState::new("secret123".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None);
+        let state = AppState::new("secret123".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None).await;
 
         assert!(!state.is_authenticated().await);
         assert!(state.validate_token("wrong").await);

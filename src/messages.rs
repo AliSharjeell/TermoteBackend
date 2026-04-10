@@ -197,7 +197,7 @@ impl From<&ConnectedDevice> for DeviceInfo {
 }
 
 /// Information about a pane sent to clients.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PaneInfo {
     /// Unique identifier for the pane.
     pub id: String,
@@ -234,7 +234,7 @@ impl From<&Pane> for PaneInfo {
 }
 
 /// Information about a pane group sent to clients.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PaneGroupInfo {
     /// Unique identifier for the group.
     pub id: String,
@@ -250,6 +250,16 @@ impl From<&PaneGroup> for PaneGroupInfo {
             id: group.id.clone(),
             name: group.name.clone(),
             color: group.color.clone(),
+        }
+    }
+}
+
+impl From<PaneGroupInfo> for PaneGroup {
+    fn from(info: PaneGroupInfo) -> Self {
+        PaneGroup {
+            id: info.id,
+            name: info.name,
+            color: info.color,
         }
     }
 }
