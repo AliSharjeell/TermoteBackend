@@ -112,6 +112,14 @@ pub enum ClientMessage {
     #[serde(rename = "git_stage")]
     GitStage { pane_id: String, files: Vec<String>, unstage: bool },
 
+    /// Push commits to remote.
+    #[serde(rename = "git_push")]
+    GitPush { pane_id: String },
+
+    /// Pull commits from remote.
+    #[serde(rename = "git_pull")]
+    GitPull { pane_id: String },
+
     /// Get git log / commit history.
     #[serde(rename = "git_log")]
     GitLog { pane_id: String },

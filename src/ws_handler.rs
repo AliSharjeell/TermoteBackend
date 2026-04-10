@@ -497,6 +497,64 @@ async fn run_git_stage(dir: &str, _pane_id: &str, files: &[String], unstage: boo
     }
 }
 
+/// Runs git push.
+async fn run_git_push(dir: &str, _pane_id: &str) -> ServerMessage {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(["push"])
+        .current_dir(dir)
+        .output();
+
+    match output {
+        Ok(o) => {
+            if o.status.success() {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                ServerMessage::Error {
+                    message: format!("Pushed successfully: {}", stdout.trim()),
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                ServerMessage::Error {
+                    message: format!("Push failed: {}", stderr.trim()),
+                }
+            }
+        }
+        Err(e) => ServerMessage::Error {
+            message: format!("Failed to execute git push: {}", e),
+        },
+    }
+}
+
+/// Runs git pull.
+async fn run_git_pull(dir: &str, _pane_id: &str) -> ServerMessage {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(["pull"])
+        .current_dir(dir)
+        .output();
+
+    match output {
+        Ok(o) => {
+            if o.status.success() {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                ServerMessage::Error {
+                    message: format!("Pulled successfully: {}", stdout.trim()),
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                ServerMessage::Error {
+                    message: format!("Pull failed: {}", stderr.trim()),
+                }
+            }
+        }
+        Err(e) => ServerMessage::Error {
+            message: format!("Failed to execute git pull: {}", e),
+        },
+    }
+}
+
 /// Runs git log to get commit history.
 async fn run_git_log(dir: &str, pane_id: &str) -> ServerMessage {
     use std::process::Command;
@@ -1171,6 +1229,56 @@ async fn handle_client_message(
             info!("Source control state requested for: {}", path);
             let result = run_source_control_state(&path).await;
             let _ = state.broadcast_tx.send(result);
+        }
+
+        ClientMessage::GitPush { pane_id } => {
+            info!("Git push requested for pane: {}", pane_id);
+
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            match cwd {
+                Some(dir) => {
+                    let result = run_git_push(&dir, &pane_id).await;
+                    let _ = state.broadcast_tx.send(result);
+                    // Refresh state after push
+                    let state_result = run_source_control_state(&dir).await;
+                    let _ = state.broadcast_tx.send(state_result);
+                }
+                None => {
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: "Pane has no working directory".to_string(),
+                    });
+                }
+            }
+        }
+
+        ClientMessage::GitPull { pane_id } => {
+            info!("Git pull requested for pane: {}", pane_id);
+
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            match cwd {
+                Some(dir) => {
+                    let result = run_git_pull(&dir, &pane_id).await;
+                    let _ = state.broadcast_tx.send(result);
+                    // Refresh state after pull
+                    let state_result = run_source_control_state(&dir).await;
+                    let _ = state.broadcast_tx.send(state_result);
+                }
+                None => {
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: "Pane has no working directory".to_string(),
+                    });
+                }
+            }
         }
 
         ClientMessage::UploadFile { pane_id, file_name, data } => {
