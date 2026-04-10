@@ -453,6 +453,88 @@ async fn run_git_commit(dir: &str, pane_id: &str, message: &str) -> ServerMessag
     }
 }
 
+/// Runs git add or git reset for specified files.
+async fn run_git_stage(dir: &str, _pane_id: &str, files: &[String], unstage: bool) -> ServerMessage {
+    use std::process::Command;
+
+    if files.is_empty() {
+        return ServerMessage::Error {
+            message: "No files specified".to_string(),
+        };
+    }
+
+    let result = if unstage {
+        // git reset HEAD -- <files>
+        let mut cmd = Command::new("git");
+        cmd.args(["reset", "HEAD", "--"]).args(files);
+        cmd.current_dir(dir);
+        cmd.output()
+    } else {
+        // git add -- <files>
+        let mut cmd = Command::new("git");
+        cmd.args(["add", "--"]).args(files);
+        cmd.current_dir(dir);
+        cmd.output()
+    };
+
+    match result {
+        Ok(output) => {
+            if output.status.success() {
+                let action = if unstage { "unstaged" } else { "staged" };
+                ServerMessage::Error {
+                    message: format!("{} {} file(s)", action, files.len()),
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                ServerMessage::Error {
+                    message: format!("Failed to {} files: {}", if unstage { "unstage" } else { "stage" }, stderr),
+                }
+            }
+        }
+        Err(e) => ServerMessage::Error {
+            message: format!("Failed to execute git command: {}", e),
+        },
+    }
+}
+
+/// Runs git log to get commit history.
+async fn run_git_log(dir: &str, pane_id: &str) -> ServerMessage {
+    use std::process::Command;
+
+    // git log --oneline -20 with format: %H|%s|%an|%ad
+    let output = Command::new("git")
+        .args(["log", "--oneline", "--format=%H|%s|%an|%ad", "-20"])
+        .current_dir(dir)
+        .output();
+
+    let commits = match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.splitn(4, '|').collect();
+                    let hash = parts.get(0).unwrap_or(&"").to_string();
+                    crate::messages::GitCommitInfo {
+                        hash: hash.clone(),
+                        short_hash: hash.chars().take(7).collect(),
+                        message: parts.get(1).unwrap_or(&"").to_string(),
+                        author: parts.get(2).unwrap_or(&"").to_string(),
+                        date: parts.get(3).unwrap_or(&"").to_string(),
+                    }
+                })
+                .collect()
+        }
+        _ => vec![],
+    };
+
+    ServerMessage::GitLog {
+        pane_id: pane_id.to_string(),
+        dir: dir.to_string(),
+        commits,
+    }
+}
+
 /// Handles a parsed client message.
 async fn handle_client_message(
     msg: ClientMessage,
@@ -891,6 +973,53 @@ async fn handle_client_message(
                     let _ = state.broadcast_tx.send(ServerMessage::GitCommitResult {
                         pane_id: pane_id.clone(),
                         success: false,
+                        message: "Pane has no working directory".to_string(),
+                    });
+                }
+            }
+        }
+
+        ClientMessage::GitStage { pane_id, files, unstage } => {
+            info!("Git stage/unstage requested for pane: {}", pane_id);
+
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            match cwd {
+                Some(dir) => {
+                    let result = run_git_stage(&dir, &pane_id, &files, unstage).await;
+                    let _ = state.broadcast_tx.send(result);
+                    // Refresh status after stage/unstage
+                    let status_result = run_git_status(&dir, &pane_id).await;
+                    let _ = state.broadcast_tx.send(status_result);
+                }
+                None => {
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: "Pane has no working directory".to_string(),
+                    });
+                }
+            }
+        }
+
+        ClientMessage::GitLog { pane_id } => {
+            info!("Git log requested for pane: {}", pane_id);
+
+            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
+                pane.cwd.clone()
+            } else {
+                None
+            };
+
+            match cwd {
+                Some(dir) => {
+                    let result = run_git_log(&dir, &pane_id).await;
+                    let _ = state.broadcast_tx.send(result);
+                }
+                None => {
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
                         message: "Pane has no working directory".to_string(),
                     });
                 }

@@ -83,15 +83,15 @@
   },
   "hotPaths": [
     {
-      "path": "src\\state.rs",
-      "accessCount": 34,
-      "lastAccessed": 1775826955057,
+      "path": "src\\ws_handler.rs",
+      "accessCount": 40,
+      "lastAccessed": 1775853513207,
       "type": "file"
     },
     {
-      "path": "src\\ws_handler.rs",
-      "accessCount": 28,
-      "lastAccessed": 1775852709709,
+      "path": "src\\state.rs",
+      "accessCount": 34,
+      "lastAccessed": 1775826955057,
       "type": "file"
     },
     {
@@ -99,6 +99,12 @@
       "accessCount": 17,
       "lastAccessed": 1775831870660,
       "type": "file"
+    },
+    {
+      "path": "src\\messages.rs",
+      "accessCount": 14,
+      "lastAccessed": 1775853488653,
+      "type": "directory"
     },
     {
       "path": "start.ps1",
@@ -122,12 +128,6 @@
       "path": "src",
       "accessCount": 2,
       "lastAccessed": 1775826580684,
-      "type": "directory"
-    },
-    {
-      "path": "src\\messages.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775826637001,
       "type": "directory"
     },
     {

@@ -107,6 +107,14 @@ pub enum ClientMessage {
     /// Commit staged changes with a message.
     #[serde(rename = "git_commit")]
     GitCommit { pane_id: String, message: String },
+
+    /// Stage or unstage files (git add / git reset).
+    #[serde(rename = "git_stage")]
+    GitStage { pane_id: String, files: Vec<String>, unstage: bool },
+
+    /// Get git log / commit history.
+    #[serde(rename = "git_log")]
+    GitLog { pane_id: String },
 }
 
 /// Server to client messages.
@@ -197,6 +205,14 @@ pub enum ServerMessage {
     /// Git commit result.
     #[serde(rename = "git_commit_result")]
     GitCommitResult { pane_id: String, success: bool, message: String },
+
+    /// Git log / commit history.
+    #[serde(rename = "git_log")]
+    GitLog {
+        pane_id: String,
+        dir: String,
+        commits: Vec<GitCommitInfo>,
+    },
 }
 
 /// Information about a connected device sent to clients.
@@ -303,4 +319,14 @@ pub struct DirectoryItem {
     pub absolute_path: String,
     /// Whether this item is a directory.
     pub is_dir: bool,
+}
+
+/// A single commit in git log.
+#[derive(Serialize, Clone, Debug)]
+pub struct GitCommitInfo {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub date: String,
 }
