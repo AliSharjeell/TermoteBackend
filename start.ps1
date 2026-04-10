@@ -50,7 +50,12 @@ if (-not (Test-Path $devtunnelExe)) {
 }
 
 # Verify it's actually devtunnel before running it
-$versionOutput = (& $devtunnelExe --version 2>&1) -join ' '
+Write-Host "Using devtunnel: $devtunnelExe" -ForegroundColor DarkGray
+try {
+    $versionOutput = (& "$devtunnelExe" --version 2>&1) | Out-String
+} catch {
+    $versionOutput = ""
+}
 if ($versionOutput -notmatch 'version') {
     Write-Host "ERROR: $devtunnelExe is not Microsoft devtunnel (got: $versionOutput)" -ForegroundColor Red
     exit 1
