@@ -438,6 +438,29 @@ $unbanCmdLines = @(
 )
 Set-Content -Path "$shimDir\termote-unban.cmd" -Value $unbanCmdLines -Encoding ASCII
 
+# termote-update: Update Termote from GitHub
+$updateLines = @(
+    '# Termote Update Script'
+    '$RepoUrl = "https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1"'
+    'Write-Host "Fetching latest Termote installation script..." -ForegroundColor White'
+    'try {'
+    '    $script = Invoke-RestMethod -Uri $RepoUrl -TimeoutSec 30 -ErrorAction Stop'
+    '    if ($script) {'
+    '        Write-Host "Script downloaded. Executing installation..." -ForegroundColor Green'
+    '        Invoke-Expression $script'
+    '    }'
+    '} catch {'
+    '    Write-Host "Failed to fetch update script: $_" -ForegroundColor Red'
+    '    exit 1'
+    '}'
+)
+Set-Content -Path "$shimDir\termote-update.ps1" -Value $updateLines -Encoding UTF8
+$updateCmdLines = @(
+    "@echo off"
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote-update.ps1' %*`""
+)
+Set-Content -Path "$shimDir\termote-update.cmd" -Value $updateCmdLines -Encoding ASCII
+
 # Add shimDir to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($userPath -notlike "*$shimDir*") {

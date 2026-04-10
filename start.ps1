@@ -1,4 +1,4 @@
-# Terminal Multiplexer Start Script
+﻿# Terminal Multiplexer Start Script
 # Generates auth token, starts Microsoft Dev Tunnel, and runs the backend
 
 Write-Host ""
