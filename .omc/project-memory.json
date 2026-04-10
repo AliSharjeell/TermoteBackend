@@ -84,8 +84,8 @@
   "hotPaths": [
     {
       "path": "src\\ws_handler.rs",
-      "accessCount": 40,
-      "lastAccessed": 1775853513207,
+      "accessCount": 49,
+      "lastAccessed": 1775854029066,
       "type": "file"
     },
     {
@@ -95,16 +95,16 @@
       "type": "file"
     },
     {
+      "path": "src\\messages.rs",
+      "accessCount": 24,
+      "lastAccessed": 1775853995154,
+      "type": "directory"
+    },
+    {
       "path": "install.ps1",
       "accessCount": 17,
       "lastAccessed": 1775831870660,
       "type": "file"
-    },
-    {
-      "path": "src\\messages.rs",
-      "accessCount": 14,
-      "lastAccessed": 1775853488653,
-      "type": "directory"
     },
     {
       "path": "start.ps1",

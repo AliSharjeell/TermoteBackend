@@ -115,6 +115,10 @@ pub enum ClientMessage {
     /// Get git log / commit history.
     #[serde(rename = "git_log")]
     GitLog { pane_id: String },
+
+    /// Get full source control state for a directory.
+    #[serde(rename = "get_source_control_state")]
+    GetSourceControlState { path: String },
 }
 
 /// Server to client messages.
@@ -213,6 +217,38 @@ pub enum ServerMessage {
         dir: String,
         commits: Vec<GitCommitInfo>,
     },
+
+    /// Full source control state.
+    #[serde(rename = "source_control_state")]
+    SourceControlState {
+        path: String,
+        is_repo: bool,
+        branch: Option<String>,
+        remote: Option<String>,
+        staged: Vec<SourceControlFile>,
+        unstaged: Vec<SourceControlFile>,
+        untracked: Vec<SourceControlFile>,
+        ahead: i32,
+        behind: i32,
+        outgoing_commits: Vec<OutgoingCommit>,
+    },
+}
+
+/// A file in source control.
+#[derive(Serialize, Clone, Debug)]
+pub struct SourceControlFile {
+    pub path: String,
+    pub status: String,
+}
+
+/// A commit that hasn't been pushed.
+#[derive(Serialize, Clone, Debug)]
+pub struct OutgoingCommit {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub date: String,
 }
 
 /// Information about a connected device sent to clients.

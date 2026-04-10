@@ -535,6 +535,147 @@ async fn run_git_log(dir: &str, pane_id: &str) -> ServerMessage {
     }
 }
 
+/// Runs full source control state: git status + ahead/behind + outgoing commits.
+async fn run_source_control_state(path: &str) -> ServerMessage {
+    use std::process::Command;
+
+    let git_dir = std::path::Path::new(path).join(".git");
+    if !git_dir.exists() {
+        return ServerMessage::SourceControlState {
+            path: path.to_string(),
+            is_repo: false,
+            branch: None,
+            remote: None,
+            staged: vec![],
+            unstaged: vec![],
+            untracked: vec![],
+            ahead: 0,
+            behind: 0,
+            outgoing_commits: vec![],
+        };
+    }
+
+    // Get branch and remote
+    let branch = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(path)
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+
+    let remote = if let Some(ref br) = branch {
+        // Get the remote for this branch
+        let remote_output = Command::new("git")
+            .args(["config", &format!("branch.{}.remote", br)])
+            .current_dir(path)
+            .output()
+            .ok()
+            .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+        remote_output
+    } else {
+        None
+    };
+
+    // Get status --porcelain
+    let status_output = Command::new("git")
+        .args(["status", "--porcelain=v1"])
+        .current_dir(path)
+        .output();
+
+    let mut staged = vec![];
+    let mut unstaged = vec![];
+    let mut untracked = vec![];
+
+    if let Ok(output) = status_output {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.len() < 3 { continue; }
+                let index = &line[..1];
+                let worktree = &line[1..2];
+                let filepath = line[3..].to_string();
+                let status = line[..2].to_string();
+
+                if index == "?" {
+                    untracked.push(crate::messages::SourceControlFile { path: filepath.clone(), status: "untracked".to_string() });
+                } else if index != " " {
+                    staged.push(crate::messages::SourceControlFile { path: filepath.clone(), status: status.clone() });
+                }
+                if worktree != " " && worktree != "?" {
+                    unstaged.push(crate::messages::SourceControlFile { path: filepath.clone(), status });
+                }
+            }
+        }
+    }
+
+    // Get ahead/behind
+    let (ahead, behind) = if remote.is_some() && branch.is_some() {
+        let rev_output = Command::new("git")
+            .args(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+            .current_dir(path)
+            .output()
+            .ok()
+            .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None });
+
+        if let Some(rev_str) = rev_output {
+            let parts: Vec<&str> = rev_str.split_whitespace().collect();
+            if parts.len() == 2 {
+                let a = parts[0].parse::<i32>().unwrap_or(0);
+                let b = parts[1].parse::<i32>().unwrap_or(0);
+                (a, b)
+            } else {
+                (0, 0)
+            }
+        } else {
+            (0, 0)
+        }
+    } else {
+        (0, 0)
+    };
+
+    // Get outgoing commits (not on remote)
+    let mut outgoing_commits = vec![];
+    if let (Some(br), Some(ref rem)) = (&branch, &remote) {
+        let upstream = format!("{}/{}", rem, br);
+        let log_output = Command::new("git")
+            .args(["log", "--oneline", &format!("{}..HEAD", upstream), "-15"])
+            .current_dir(path)
+            .output();
+
+        if let Ok(output) = log_output {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    if line.is_empty() { continue; }
+                    let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                    let hash = parts.get(0).unwrap_or(&"").to_string();
+                    let message = parts.get(1).unwrap_or(&"").to_string();
+                    outgoing_commits.push(crate::messages::OutgoingCommit {
+                        hash: hash.clone(),
+                        short_hash: hash.chars().take(7).collect(),
+                        message,
+                        author: "".to_string(),
+                        date: "".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    ServerMessage::SourceControlState {
+        path: path.to_string(),
+        is_repo: true,
+        branch,
+        remote,
+        staged,
+        unstaged,
+        untracked,
+        ahead,
+        behind,
+        outgoing_commits,
+    }
+}
+
 /// Handles a parsed client message.
 async fn handle_client_message(
     msg: ClientMessage,
@@ -1024,6 +1165,12 @@ async fn handle_client_message(
                     });
                 }
             }
+        }
+
+        ClientMessage::GetSourceControlState { path } => {
+            info!("Source control state requested for: {}", path);
+            let result = run_source_control_state(&path).await;
+            let _ = state.broadcast_tx.send(result);
         }
 
         ClientMessage::UploadFile { pane_id, file_name, data } => {
