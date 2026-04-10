@@ -441,7 +441,7 @@ async fn handle_client_message(
             };
 
             let response_items = items.unwrap_or_else(|_: std::io::Error| Vec::new());
-            let _ = _tx.send(ServerMessage::DirectoryContents {
+            let _ = state.broadcast_tx.send(ServerMessage::DirectoryContents {
                 path: result_path,
                 items: response_items,
             });
