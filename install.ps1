@@ -339,106 +339,7 @@ $logCmdLines = @(
 )
 Set-Content -Path "$shimDir\termote-log.cmd" -Value $logCmdLines -Encoding ASCII
 
-# termote-ban-list: List all banned IPs
-$banListLines = @(
-    '# Termote Ban List Viewer'
-    ''
-    'function Send-IpcCommand($cmd) {'
-    '    try {'
-    '        $client = New-Object System.Net.Sockets.TcpClient'
-    '        $client.Connect("127.0.0.1", 9091)'
-    '        $client.ReceiveTimeout = 3000'
-    '        $stream = $client.GetStream()'
-    '        $reader = New-Object System.IO.StreamReader($stream)'
-    '        $writer = New-Object System.IO.StreamWriter($stream)'
-    '        $writer.WriteLine($cmd)'
-    '        $writer.Flush()'
-    '        $writer.Dispose()'
-    '        $response = $reader.ReadToEnd()'
-    '        $stream.Dispose()'
-    '        $client.Close()'
-    '        return $response.Trim()'
-    '    } catch { return $null }'
-    '}'
-    ''
-    'Write-Host ""'
-    'Write-Host "  Termote Banned IPs" -ForegroundColor Cyan'
-    'Write-Host "  ─────────────────" -ForegroundColor Cyan'
-    'Write-Host ""'
-    ''
-    '$response = Send-IpcCommand "ban-list"'
-    'if ($null -eq $response) {'
-    '    Write-Host "Failed to connect to Termote backend." -ForegroundColor Red'
-    '    exit 1'
-    '}'
-    'if ($response -eq "No banned IPs") {'
-    '    Write-Host "  No banned IPs" -ForegroundColor Gray'
-    '} else {'
-    '    $lines = $response -split "`n"'
-    '    foreach ($line in $lines) { if ($line.Trim()) { Write-Host "  $($line.Trim())" -ForegroundColor White } }'
-    '}'
-    'Write-Host ""'
-)
-Set-Content -Path "$shimDir\termote-ban-list.ps1" -Value $banListLines -Encoding UTF8
-
-$banListCmdLines = @(
-    "@echo off"
-    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote-ban-list.ps1' %*`""
-)
-Set-Content -Path "$shimDir\termote-ban-list.cmd" -Value $banListCmdLines -Encoding ASCII
-
-# termote-unban: Unban an IP address
-$unbanLines = @(
-    '# Termote Unban Script'
-    'param([string]$IpAddress)'
-    ''
-    'function Send-IpcCommand($cmd) {'
-    '    try {'
-    '        $client = New-Object System.Net.Sockets.TcpClient'
-    '        $client.Connect("127.0.0.1", 9091)'
-    '        $client.ReceiveTimeout = 3000'
-    '        $stream = $client.GetStream()'
-    '        $reader = New-Object System.IO.StreamReader($stream)'
-    '        $writer = New-Object System.IO.StreamWriter($stream)'
-    '        $writer.WriteLine($cmd)'
-    '        $writer.Flush()'
-    '        $writer.Dispose()'
-    '        $response = $reader.ReadToEnd()'
-    '        $stream.Dispose()'
-    '        $client.Close()'
-    '        return $response.Trim()'
-    '    } catch { return $null }'
-    '}'
-    ''
-    'Write-Host ""'
-    'Write-Host "  Termote Unban" -ForegroundColor Cyan'
-    'Write-Host "  ────────────" -ForegroundColor Cyan'
-    'Write-Host ""'
-    ''
-    'if (-not $IpAddress) {'
-    '    Write-Host "Usage: termote-unban <ip-address>" -ForegroundColor Yellow'
-    '    exit 1'
-    '}'
-    ''
-    '$response = Send-IpcCommand "unban:$IpAddress"'
-    'if ($null -eq $response) {'
-    '    Write-Host "Failed to connect to Termote backend." -ForegroundColor Red'
-    '    exit 1'
-    '}'
-    'if ($response -eq "IP unbanned successfully") { Write-Host "  Successfully unbanned $IpAddress" -ForegroundColor Green }'
-    'elseif ($response -eq "IP was not banned") { Write-Host "  IP was not in the ban list" -ForegroundColor Yellow }'
-    'else { Write-Host "  Response: $response" -ForegroundColor Gray }'
-    'Write-Host ""'
-)
-Set-Content -Path "$shimDir\termote-unban.ps1" -Value $unbanLines -Encoding UTF8
-
-$unbanCmdLines = @(
-    "@echo off"
-    "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& '%~dp0termote-unban.ps1' %*`""
-)
-Set-Content -Path "$shimDir\termote-unban.cmd" -Value $unbanCmdLines -Encoding ASCII
-
-# termote-update: Update Termote from GitHub
+# Add shimDir to PATH if not already there
 $updateLines = @(
     '# Termote Update Script'
     '$RepoUrl = "https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1"'
@@ -520,8 +421,6 @@ Write-Host "  - termote         : Start or connect to Termote" -ForegroundColor 
 Write-Host "  - termote-kill   : Stop all Termote instances" -ForegroundColor Cyan
 Write-Host "  - termote-link   : Show tunnel URL, password & share link" -ForegroundColor Cyan
 Write-Host "  - termote-log    : View real-time backend logs" -ForegroundColor Cyan
-Write-Host "  - termote-ban-list: List banned IP addresses" -ForegroundColor Cyan
-Write-Host "  - termote-unban  : Unban an IP address" -ForegroundColor Cyan
 Write-Host "  - Right-click in folder -> 'Open with Termote'" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  If commands not found in new terminal, run:" -ForegroundColor Yellow
