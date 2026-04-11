@@ -423,5 +423,72 @@ pub struct PortProcess {
     pub port: u16,
     pub pid: u32,
     pub process_name: String,
+    pub pretty_name: Option<String>,
     pub cwd: Option<String>,
+}
+
+/// Maps port numbers to human-readable service names for known dev tools.
+pub const PORT_MAP: &[(u16, &str)] = &[
+    // --- Frontend & Meta-Frameworks ---
+    (3000, "React / Next.js / Grafana"),
+    (3001, "Node.js / Alternate Dev Server"),
+    (4000, "Gatsby / Hexo / Phoenix"),
+    (4200, "Angular"),
+    (4321, "Astro"),
+    (5173, "Vite"),
+    (5174, "Vite (Alt)"),
+    (5175, "Vite (Alt)"),
+    (5176, "Vite (Alt)"),
+    (5177, "Vite (Alt)"),
+    (5178, "Vite (Alt)"),
+    (5179, "Vite (Alt)"),
+    (5180, "Vite (Alt)"),
+    (5181, "Vite (Alt)"),
+    (5182, "Vite (Alt)"),
+    (5183, "Vite (Alt)"),
+    (5184, "Vite (Alt)"),
+    (8080, "Tomcat / Webpack / Vue"),
+    (8081, "React Native Metro"),
+
+    // --- Backend APIs ---
+    (5000, "Flask / .NET Core"),
+    (5001, ".NET Core (HTTPS)"),
+    (5432, "PostgreSQL"),
+    (5433, "PostgreSQL (Alt)"),
+    (5500, "Laravel Valet"),
+    (8000, "Django / FastAPI / Laravel"),
+    (8001, "Django / FastAPI (Alt)"),
+    (8090, "PocketBase"),
+    (8443, "HTTPS Dev Server"),
+
+    // --- Databases & Caching ---
+    (1433, "SQL Server"),
+    (3306, "MySQL / MariaDB"),
+    (6379, "Redis"),
+    (9200, "Elasticsearch"),
+    (9300, "Elasticsearch (Transport)"),
+    (11211, "Memcached"),
+    (27017, "MongoDB"),
+    (27018, "MongoDB (Alt)"),
+    (27019, "MongoDB (Alt)"),
+
+    // --- AI & Local LLMs ---
+    (7860, "Gradio / Stable Diffusion"),
+    (8188, "ComfyUI"),
+    (11434, "Ollama"),
+
+    // --- DevOps & Utilities ---
+    (8025, "Mailpit / Mailhog"),
+    (9000, "Docker / Portainer / MinIO"),
+    (9090, "Prometheus"),
+    (9091, "Prometheus (Alt) / cAdvisor"),
+    (9092, "Grafana"),
+    (9093, "Grafana (Alt)"),
+];
+
+/// Returns the pretty name for a port if known, otherwise None.
+pub fn get_pretty_port_name(port: u16) -> Option<String> {
+    PORT_MAP.iter()
+        .find(|(p, _)| *p == port)
+        .map(|(_, name)| name.to_string())
 }
