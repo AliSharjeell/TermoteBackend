@@ -1602,6 +1602,30 @@ async fn handle_client_message(
                 }
             }
         }
+
+        ClientMessage::SpawnLazygit { pane_id, cwd } => {
+            info!("Spawn Lazygit request for pane {} at {}", pane_id, cwd);
+
+            // Spawn a new PTY with lazygit in the specified directory
+            match state.pty_manager.spawn_lazygit(&cwd, 120, 40, state.clone(), &state.broadcast_tx).await {
+                Ok((new_pane_id, _pid)) => {
+                    info!("Lazygit spawned as pane {} at {}", new_pane_id, cwd);
+                    // Notify client that lazygit was spawned
+                    let _ = state.broadcast_tx.send(ServerMessage::LazygitSpawned {
+                        pane_id: new_pane_id.clone(),
+                        cwd: cwd.clone(),
+                    });
+                    // Broadcast state update so the new pane appears
+                    broadcast_state_update(state).await;
+                }
+                Err(e) => {
+                    error!("Failed to spawn Lazygit: {}", e);
+                    let _ = state.broadcast_tx.send(ServerMessage::Error {
+                        message: format!("Failed to spawn Lazygit: {}", e),
+                    });
+                }
+            }
+        }
     }
 
     Ok(())

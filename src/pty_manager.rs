@@ -280,6 +280,164 @@ impl PtyManager {
         }
         Ok(())
     }
+
+    /// Spawns a Lazygit PTY in the specified directory.
+    ///
+    /// Returns the pane ID and PID on success.
+    pub async fn spawn_lazygit(
+        &self,
+        cwd: &str,
+        cols: u16,
+        rows: u16,
+        state: AppState,
+        broadcast_tx: &broadcast::Sender<crate::messages::ServerMessage>,
+    ) -> Result<(String, u32), Box<dyn std::error::Error + Send + Sync>> {
+        let pty_system = native_pty_system();
+
+        let pair = pty_system.openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+
+        // Build lazygit command
+        let mut cmd = CommandBuilder::new("lazygit");
+        cmd.env("TERM", "xterm-256color");
+        // Set the working directory
+        if !cwd.is_empty() {
+            if cfg!(windows) {
+                cmd.cwd(cwd);
+            } else {
+                cmd.cwd(cwd);
+            }
+        }
+
+        info!("Spawning Lazygit at {} with cols={}, rows={}", cwd, cols, rows);
+
+        let child = pair.slave.spawn_command(cmd)?;
+        let pid = child.process_id().ok_or("Failed to get process ID")?;
+
+        // Create pane ID
+        let pane_id = uuid::Uuid::new_v4().to_string();
+
+        // Clone references for the async task
+        let pane_id_clone = pane_id.clone();
+        let broadcast_tx_clone = broadcast_tx.clone();
+        let instances_clone = self.instances.clone();
+        let master_writer_clone = self.master_writer.clone();
+        let master_pty_clone = self.master_pty.clone();
+        let state_clone = state.clone();
+
+        // Get master writer for input
+        let master_writer = pair.master.take_writer()?;
+
+        // Get the master reader for output
+        let mut reader = pair.master.try_clone_reader()?;
+
+        let master_for_resize: Box<dyn MasterPty + Send> = unsafe {
+            std::mem::transmute(pair.master)
+        };
+
+        // Spawn async task to read PTY output
+        tokio::spawn(async move {
+            // Store the instance, writer, and master pty
+            if let Ok(mut instances) = instances_clone.lock() {
+                instances.insert(pane_id_clone.clone(), PtyInstance { child });
+            }
+            if let Ok(mut writers) = master_writer_clone.lock() {
+                writers.insert(pane_id_clone.clone(), master_writer);
+            }
+            if let Ok(mut master_map) = master_pty_clone.lock() {
+                master_map.insert(pane_id_clone.clone(), master_for_resize);
+            }
+
+            // Use a channel to communicate between blocking thread and async context
+            let (read_tx, mut read_rx) = mpsc::channel::<Result<Vec<u8>, std::io::Error>>(100);
+
+            // Spawn a blocking thread to read from the PTY
+            thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                loop {
+                    match std::io::Read::read(&mut reader, &mut buf) {
+                        Ok(0) => {
+                            // EOF
+                            break;
+                        }
+                        Ok(n) => {
+                            let data = buf[..n].to_vec();
+                            if read_tx.blocking_send(Ok(data)).is_err() {
+                                // Receiver dropped
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = read_tx.blocking_send(Err(e));
+                            break;
+                        }
+                    }
+                }
+            });
+
+            // Receive data in async loop and forward to WebSocket
+            while let Some(result) = read_rx.recv().await {
+                match result {
+                    Ok(data) => {
+                        if data.is_empty() {
+                            break;
+                        }
+                        let text = String::from_utf8(data)
+                            .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).to_string());
+                        tracing::debug!("Lazygit output ({} bytes) for pane {}", text.len(), pane_id_clone);
+
+                        // Store in scrollback buffer
+                        state_clone.append_pane_buffer(&pane_id_clone, text.as_bytes()).await;
+
+                        let msg = crate::messages::ServerMessage::Output {
+                            pane_id: pane_id_clone.clone(),
+                            data: text,
+                        };
+
+                        if broadcast_tx_clone.send(msg).is_err() {
+                            warn!("No active receivers for broadcast");
+                        }
+                    }
+                    Err(e) => {
+                        error!("Lazygit PTY read error: {}", e);
+                        break;
+                    }
+                }
+            }
+
+            // Remove instance on exit
+            if let Ok(mut instances) = instances_clone.lock() {
+                instances.remove(&pane_id_clone);
+            }
+            if let Ok(mut writers) = master_writer_clone.lock() {
+                writers.remove(&pane_id_clone);
+            }
+            if let Ok(mut master_map) = master_pty_clone.lock() {
+                master_map.remove(&pane_id_clone);
+            }
+
+            // Notify that pane was killed (via broadcast so all clients see it)
+            let _ = state_clone.remove_pane(&pane_id_clone).await;
+            let panes = state_clone.get_panes_info().await;
+            let active_panes = state_clone.get_active_panes().await;
+            let floating_panes = state_clone.get_floating_panes().await;
+            let groups = state_clone.get_all_groups().await;
+            let _ = broadcast_tx_clone.send(crate::messages::ServerMessage::StateUpdate { panes, active_panes, floating_panes, groups });
+        });
+
+        // Add the pane to state with correct ID
+        let mut pane = crate::state::Pane::new(pid, "lazygit".to_string(), cols, rows);
+        pane.id = pane_id.clone();
+        pane.cwd = Some(cwd.to_string());
+        state.add_pane(pane).await;
+
+        // Return (pane_id, pid)
+        Ok((pane_id, pid))
+    }
 }
 
 impl Default for PtyManager {
