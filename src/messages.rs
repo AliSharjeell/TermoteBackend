@@ -122,7 +122,7 @@ pub enum ClientMessage {
 
     /// Get git log / commit history.
     #[serde(rename = "git_log")]
-    GitLog { pane_id: String },
+    GitLog { pane_id: String, dir: String },
 
     /// Get full source control state for a directory.
     #[serde(rename = "get_source_control_state")]

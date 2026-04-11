@@ -695,7 +695,7 @@ async fn run_git_log(dir: &str, pane_id: &str) -> ServerMessage {
 
     // git log --oneline -20 with format: %H|%s|%an|%ad
     let output = Command::new("git")
-        .args(["log", "--oneline", "--format=%H|%s|%an|%ad", "-20"])
+        .args(["log", "--oneline", "--format=%H|%s|%an|%ad", "-100"])
         .current_dir(dir)
         .output();
 
@@ -1373,25 +1373,15 @@ async fn handle_client_message(
             }
         }
 
-        ClientMessage::GitLog { pane_id } => {
-            info!("Git log requested for pane: {}", pane_id);
-
-            let cwd = if let Some(pane) = state.get_pane(&pane_id).await {
-                pane.cwd.clone()
+        ClientMessage::GitLog { pane_id, dir } => {
+            info!("Git log requested for pane: {} dir: {}", pane_id, dir);
+            if dir.is_empty() {
+                let _ = state.broadcast_tx.send(ServerMessage::Error {
+                    message: "No directory provided for git log".to_string(),
+                });
             } else {
-                None
-            };
-
-            match cwd {
-                Some(dir) => {
-                    let result = run_git_log(&dir, &pane_id).await;
-                    let _ = state.broadcast_tx.send(result);
-                }
-                None => {
-                    let _ = state.broadcast_tx.send(ServerMessage::Error {
-                        message: "Pane has no working directory".to_string(),
-                    });
-                }
+                let result = run_git_log(&dir, &pane_id).await;
+                let _ = state.broadcast_tx.send(result);
             }
         }
 
