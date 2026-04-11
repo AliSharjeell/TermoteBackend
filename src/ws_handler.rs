@@ -560,7 +560,80 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
     use std::collections::HashMap;
     use std::process::Command;
 
-    // First get a map of PID -> process name from tasklist
+    // --- OS Process Blocklist ---
+    // These executables are background noise; skip them to reduce clutter.
+    let blocklist: std::collections::HashSet<&str> = [
+        // Windows System Processes
+        "svchost.exe",
+        "System",
+        "System Idle Process",
+        "explorer.exe",
+        "lsass.exe",
+        "spoolsv.exe",
+        "services.exe",
+        "wininit.exe",
+        "csrss.exe",
+        "smss.exe",
+        "dwm.exe",
+        "winlogon.exe",
+        "registry",
+        "Memory Compression",
+        "Secure System",
+        // Browsers (open many background ports)
+        "chrome.exe",
+        "msedge.exe",
+        "firefox.exe",
+        "brave.exe",
+        // Chat & Media Apps
+        "Discord.exe",
+        "Spotify.exe",
+        "slack.exe",
+        "Teams.exe",
+        "zoom.exe",
+        // Office & Productivity
+        "OUTLOOK.EXE",
+        "EXCEL.EXE",
+        "WINWORD.EXE",
+        "OneDrive.exe",
+        // OS Utilities
+        "RuntimeBroker.exe",
+        "SearchHost.exe",
+        "ShellExperienceHost.exe",
+        "TextInputHost.exe",
+        "StartMenuExperienceHost.exe",
+        "WidgetService.exe",
+        "ApplicationFrameHost.exe",
+        // Security
+        "SecurityHealthService.exe",
+        "MsMpEng.exe",
+        "NisSrv.exe",
+        // OneDrive / Cloud
+        "OneDrive.exe",
+        // Other common noise
+        "conhost.exe",
+        "fontdrvhost.exe",
+        "sihost.exe",
+        "taskhostw.exe",
+        "WmiPrvSE.exe",
+        "dllhost.exe",
+        "provtool.exe",
+        "audiodg.exe",
+        "SearchIndexer.exe",
+        "spoolsv.exe",
+        "armsvc.exe",
+        "AdobeUpdateService.exe",
+        "CCXProcess.exe",
+        "Creative Cloud.exe",
+        "RadeonSoftware.exe",
+        "RadeonSettings.exe",
+        "Steam.exe",
+        "Steam Service.exe",
+        "EpicGamesLauncher.exe",
+        "Origin.exe",
+        "UbisoftGameLauncher.exe",
+    ].iter().cloned().collect();
+
+    // --- Build PID -> Process Name map via tasklist ---
     let mut pid_to_name: HashMap<u32, String> = HashMap::new();
     if let Ok(task_output) = Command::new("tasklist")
         .args(["/FI", "STATUS eq Running", "/FO", "CSV", "/NH"])
@@ -584,10 +657,14 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
         }
     }
 
+    // --- Use sysinfo for more reliable process name lookup ---
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_all();
+
     let mut processes = vec![];
     let mut seen: std::collections::HashSet<u16> = std::collections::HashSet::new();
 
-    // Use netstat to find listening ports with process IDs
+    // --- Use netstat to find listening ports with process IDs ---
     let output = Command::new("netstat")
         .args(["-ano", "-p", "TCP"])
         .output()
@@ -608,19 +685,45 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
             if let Some(colon_pos) = local_addr.rfind(':') {
                 if let Ok(port) = local_addr[colon_pos + 1..].parse::<u16>() {
                     if let Ok(pid) = parts[4].parse::<u32>() {
-                        // Skip system ports (1024 and below) to reduce noise
-                        // Also deduplicate by port
-                        if port > 1024 && seen.insert(port) {
-                            let process_name = pid_to_name.get(&pid)
-                                .cloned()
-                                .unwrap_or_else(|| format!("PID:{}", pid));
-                            processes.push(crate::messages::PortProcess {
-                                port,
-                                pid,
-                                process_name,
-                                cwd: None,
-                            });
+                        // Skip ephemeral ports (49152-65535) — these are OS-assigned for
+                        // outbound connections and rarely represent dev servers.
+                        if port > 49151 {
+                            continue;
                         }
+                        // Skip system ports (1024 and below) to reduce noise
+                        if port <= 1024 {
+                            continue;
+                        }
+                        // Deduplicate by port
+                        if !seen.insert(port) {
+                            continue;
+                        }
+
+                        // --- Determine process name ---
+                        // Prefer sysinfo (more reliable), fall back to tasklist
+                        let process_name = if let Some(proc) = sys.process((pid as usize).into()) {
+                            proc.name().to_string_lossy().into_owned()
+                        } else {
+                            pid_to_name.get(&pid)
+                                .cloned()
+                                .unwrap_or_else(|| format!("PID:{}", pid))
+                        };
+
+                        // Skip blocklisted processes
+                        if blocklist.contains(process_name.as_str()) {
+                            continue;
+                        }
+
+                        // --- Determine pretty name via PORT_MAP ---
+                        let pretty_name = crate::messages::get_pretty_port_name(port);
+
+                        processes.push(crate::messages::PortProcess {
+                            port,
+                            pid,
+                            process_name,
+                            pretty_name,
+                            cwd: None,
+                        });
                     }
                 }
             }
