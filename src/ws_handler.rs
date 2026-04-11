@@ -585,6 +585,7 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
     }
 
     let mut processes = vec![];
+    let mut seen: std::collections::HashSet<u16> = std::collections::HashSet::new();
 
     // Use netstat to find listening ports with process IDs
     let output = Command::new("netstat")
@@ -607,8 +608,9 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
             if let Some(colon_pos) = local_addr.rfind(':') {
                 if let Ok(port) = local_addr[colon_pos + 1..].parse::<u16>() {
                     if let Ok(pid) = parts[4].parse::<u32>() {
-                        // Skip system ports (below 1000) to reduce noise
-                        if port >= 1000 {
+                        // Skip system ports (1024 and below) to reduce noise
+                        // Also deduplicate by port
+                        if port > 1024 && seen.insert(port) {
                             let process_name = pid_to_name.get(&pid)
                                 .cloned()
                                 .unwrap_or_else(|| format!("PID:{}", pid));
