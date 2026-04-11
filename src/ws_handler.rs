@@ -607,8 +607,8 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
             if let Some(colon_pos) = local_addr.rfind(':') {
                 if let Ok(port) = local_addr[colon_pos + 1..].parse::<u16>() {
                     if let Ok(pid) = parts[4].parse::<u32>() {
-                        // Skip system ports (below 10000) to reduce noise
-                        if port >= 10000 {
+                        // Skip system ports (below 1000) to reduce noise
+                        if port >= 1000 {
                             let process_name = pid_to_name.get(&pid)
                                 .cloned()
                                 .unwrap_or_else(|| format!("PID:{}", pid));
