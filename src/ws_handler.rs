@@ -1639,7 +1639,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health_handler))
         .route("/tunnel-check", get(tunnel_check_handler))
         .route("/launch", get(launch_handler))
-        .route("/proxy", get(proxy_handler))
+        .route("/proxy/*target", get(proxy_handler))
         .with_state(state)
 }
 
@@ -1687,96 +1687,61 @@ pub async fn launch_handler(State(state): State<Arc<AppState>>) -> Response {
 }
 
 /// Proxy handler - forwards HTTP requests from the browser pane through the backend.
-/// This allows the browser pane to access localhost URLs from the viewing device.
+/// Path format: /proxy/<scheme>://<host><path>
+/// Examples:
+///   /proxy/http/localhost:3000/          -> fetches http://localhost:3000/
+///   /proxy/http/localhost:3000/_next/... -> fetches http://localhost:3000/_next/...
 pub async fn proxy_handler(
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    axum::extract::Path(target): axum::extract::Path<String>,
 ) -> Response {
     use axum::http::{header, StatusCode, header::HeaderValue};
 
-    let url = match params.get("url") {
-        Some(u) => u,
-        None => {
-            return (StatusCode::BAD_REQUEST, [(header::CONTENT_TYPE, "text/plain")], "Missing url parameter").into_response();
+    // Parse target: "http/localhost:3000/_next/static/abc.js"
+    // We need to reconstruct the URL from the path
+    let target = target.trim_start_matches('/');
+    let (scheme, rest) = match target.split_once('/') {
+        Some((s, r)) if s == "http" || s == "https" => (s, r),
+        _ => {
+            return (StatusCode::BAD_REQUEST, [(header::CONTENT_TYPE, "text/plain")], "Invalid proxy target format. Use /proxy/http/host:port/path").into_response();
         }
     };
+    // Find the first slash after host:port to split host_port from path
+    // Format: host:port/path or just host:port
+    let (host_port, path) = match rest.find('/') {
+        Some(pos) => (&rest[..pos], &rest[pos..]),
+        None => (rest, ""),
+    };
+    let url = format!("{}://{}{}", scheme, host_port, path);
 
-    // Validate the URL is allowed - only allow localhost and local IPs for security
-    // Extract host from URL manually (format: http://host:port/path)
-    let host = url.trim_start_matches("http://").trim_start_matches("https://").split(':').next().unwrap_or("").split('/').next().unwrap_or("");
-    let is_localhost = host == "localhost" || host == "127.0.0.1" || host == "::1";
+    // Validate host - only allow localhost and local IPs
+    let is_localhost = host_port == "localhost" || host_port == "127.0.0.1" || host_port == "::1"
+        || host_port.starts_with("192.168.")
+        || host_port.starts_with("10.")
+        || (host_port.starts_with("172.") && {
+            // Check 172.16-31.x.x range
+            if let Some(dot2) = host_port.strip_prefix("172.") {
+                if let Some(dot3) = dot2.find('.') {
+                    let third: u32 = dot2[..dot3].parse().unwrap_or(0);
+                    third >= 16 && third <= 31
+                } else { false }
+            } else { false }
+        })
+        || host_port.ends_with(".local");
 
-    // Allow access to localhost, 127.0.0.1, and local network IPs
-    let allowed = is_localhost
-        || host.starts_with("192.168.")
-        || host.starts_with("10.")
-        || host.starts_with("172.16.") || host.starts_with("172.17.") || host.starts_with("172.18.")
-        || host.starts_with("172.19.") || host.starts_with("172.20.") || host.starts_with("172.21.")
-        || host.starts_with("172.22.") || host.starts_with("172.23.") || host.starts_with("172.24.")
-        || host.starts_with("172.25.") || host.starts_with("172.26.") || host.starts_with("172.27.")
-        || host.starts_with("172.28.") || host.starts_with("172.29.") || host.starts_with("172.30.")
-        || host.starts_with("172.31.")
-        || host.ends_with(".local");
-
-    if !allowed && !is_localhost {
-        warn!("Proxy blocked request to non-local host: {}", url);
+    if !is_localhost {
+        warn!("Proxy blocked request to non-local host: {}", host_port);
         return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], "Only local URLs allowed").into_response();
     }
 
-    // Extract base URL for rewriting relative paths (e.g. "http://localhost:3000")
-    let base_url = if let Some(pos) = url.find("://") {
-        let after_scheme = &url[pos + 3..];
-        if let Some(slash) = after_scheme.find('/') {
-            format!("{}://{}", &url[..pos + 3], &after_scheme[..slash])
-        } else {
-            url.clone()
-        }
-    } else {
-        url.clone()
-    };
+    // Build the base URL for <base> tag injection (everything up to the last slash of the path)
+    let base_url = format!("{}://{}", scheme, host_port);
 
-    // Make the proxied request using the local machine's network
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none()) // handle redirects manually
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    match client.get(url).send().await {
+    // Make the proxied request - follow redirects automatically
+    match reqwest::get(&url).await {
         Ok(resp) => {
-            // Handle redirects manually - follow up to 10 redirects
-            let mut final_resp = resp;
-            let mut redirect_err: Option<String> = None;
-            for _ in 0..10 {
-                if final_resp.status().is_redirection() {
-                    if let Some(loc) = final_resp.headers().get(header::LOCATION) {
-                        let loc_str = loc.to_str().unwrap_or("");
-                        // Build absolute URL if relative
-                        let redirect_url = if loc_str.starts_with("http") {
-                            loc_str.to_string()
-                        } else if loc_str.starts_with("//") {
-                            format!("http:{}", loc_str)
-                        } else if loc_str.starts_with("/") {
-                            format!("{}:{}", base_url, loc_str)
-                        } else {
-                            format!("{}/{}", base_url, loc_str)
-                        };
-                        match client.get(&redirect_url).send().await {
-                            Ok(r) => { final_resp = r; continue; }
-                            Err(e) => {
-                                redirect_err = Some(format!("Upstream redirect error: {}", e));
-                                break;
-                            }
-                        };
-                    }
-                }
-                break;
-            }
-
-            if let Some(err_msg) = redirect_err {
-                return (StatusCode::BAD_GATEWAY, [(header::CONTENT_TYPE, "text/plain")], err_msg).into_response();
-            }
-
-            let status = final_resp.status();
-            let headers = final_resp.headers().clone();
-            let body = final_resp.bytes().await;
+            let status = resp.status();
+            let headers = resp.headers().clone();
+            let body = resp.bytes().await;
 
             match body {
                 Ok(body_bytes) => {
@@ -1784,24 +1749,23 @@ pub async fn proxy_handler(
                         .map(|v| v.to_str().unwrap_or("text/html"))
                         .unwrap_or("text/html");
                     let is_html = content_type.contains("text/html") || content_type.contains("application/xhtml");
-                    let is_css = content_type.contains("text/css") || content_type == "application/javascript" || content_type == "text/javascript" || content_type == "application/x-javascript";
 
-                    // Rewrite relative URLs in HTML, CSS, and JS responses
-                    let final_body = if is_html || is_css {
-                        rewrite_relative_urls(body_bytes.as_ref(), &base_url)
+                    // For HTML responses, inject <base href> so the browser resolves all relative URLs
+                    // through our proxy path automatically - no regex needed
+                    let final_body = if is_html {
+                        inject_base_tag(body_bytes.as_ref(), &base_url)
                     } else {
                         body_bytes.to_vec()
                     };
 
-                    // Build response headers - filter out problematic ones
+                    // Build response - forward Content-Type exactly as the upstream returned it
                     let mut response_headers = vec![
                         (header::CONTENT_TYPE, HeaderValue::from_str(content_type)
-                            .unwrap_or(HeaderValue::from_static("text/html"))),
+                            .unwrap_or(HeaderValue::from_static("application/octet-stream"))),
                         (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
                     ];
 
-                    // Update content-length if we rewrote the body
-                    if is_html || is_css {
+                    if is_html {
                         response_headers.push((header::CONTENT_LENGTH, HeaderValue::from(final_body.len())));
                     }
 
@@ -1825,61 +1789,21 @@ pub async fn proxy_handler(
     }
 }
 
-/// Rewrite relative URLs in HTML/CSS/JS content to point through our proxy.
-/// This fixes assets like <link href="/app.css"> and <script src="/bundle.js">
-/// by converting them to proxy URLs the browser can actually reach.
-fn rewrite_relative_urls(content: &[u8], base_url: &str) -> Vec<u8> {
+/// Inject a <base href> tag into HTML pages so the browser resolves all relative URLs
+/// (CSS, JS, images, fonts) through the proxy path automatically.
+/// This is far more robust than regex-replacing individual URL attributes.
+fn inject_base_tag(content: &[u8], base_url: &str) -> Vec<u8> {
     let html = String::from_utf8_lossy(content);
+    let base_tag = format!(r#"<base href="{}">"#, base_url);
 
-    // Patterns to rewrite:
-    // 1. href="/path" -> href="/proxy?url=base_url/path"
-    // 2. src="/path" -> src="/proxy?url=base_url/path"
-    // 3. url('/path') -> url('/proxy?url=base_url/path')
-    // 4. url("/path") -> url("/proxy?url=base_url/path")
-
-    // Build the encoded base URL for embedding in proxy URLs
-    let encoded_base = urlencoding::encode(base_url);
-
-    // Regex patterns for common relative URL contexts
-    // These capture the path inside quotes, the replacement adds proxy prefix
-    static HREF_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"href="(/[^"]+)""#).unwrap()
-    });
-    static SRC_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"src="(/[^"]+)""#).unwrap()
-    });
-    static URL_SINGLE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"url\('/([^']+)'\)"#).unwrap()
-    });
-    static URL_DOUBLE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"url\("/([^"]+)"\)"#).unwrap()
+    // Inject immediately after <head> tag (case-insensitive), if present
+    static HEAD_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)<head([^>]*)>").unwrap()
     });
 
-    let mut result = html.to_string();
+    let result = HEAD_RE.replace(&html, |caps: &regex::Captures| {
+        format!("<head{}>{}", &caps[1], base_tag)
+    });
 
-    // Rewrite href="/path" to href="/proxy?url=base_url/path"
-    result = HREF_RE.replace_all(&result, |caps: &regex::Captures| {
-        let path = &caps[1];
-        format!(r#"href="/proxy?url={}{}""#, encoded_base, urlencoding::encode(path))
-    }).to_string();
-
-    // Rewrite src="/path" to src="/proxy?url=base_url/path"
-    result = SRC_RE.replace_all(&result, |caps: &regex::Captures| {
-        let path = &caps[1];
-        format!(r#"src="/proxy?url={}{}""#, encoded_base, urlencoding::encode(path))
-    }).to_string();
-
-    // Rewrite url('/path') in CSS
-    result = URL_SINGLE_RE.replace_all(&result, |caps: &regex::Captures| {
-        let path = &caps[1];
-        format!(r#"url('/proxy?url={}{}')"#, encoded_base, urlencoding::encode(path))
-    }).to_string();
-
-    // Rewrite url("/path") in CSS
-    result = URL_DOUBLE_RE.replace_all(&result, |caps: &regex::Captures| {
-        let path = &caps[1];
-        format!(r#"url("/proxy?url={}{}")"#, encoded_base, urlencoding::encode(path))
-    }).to_string();
-
-    result.into_bytes()
+    result.to_string().into_bytes()
 }
