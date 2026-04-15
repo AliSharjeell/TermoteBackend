@@ -84,8 +84,8 @@
   "hotPaths": [
     {
       "path": "src\\ws_handler.rs",
-      "accessCount": 49,
-      "lastAccessed": 1775854029066,
+      "accessCount": 94,
+      "lastAccessed": 1776236230968,
       "type": "file"
     },
     {
@@ -102,21 +102,21 @@
     },
     {
       "path": "install.ps1",
-      "accessCount": 17,
-      "lastAccessed": 1775831870660,
+      "accessCount": 23,
+      "lastAccessed": 1776235790623,
       "type": "file"
+    },
+    {
+      "path": "src\\pty_manager.rs",
+      "accessCount": 8,
+      "lastAccessed": 1775941018119,
+      "type": "directory"
     },
     {
       "path": "start.ps1",
       "accessCount": 7,
       "lastAccessed": 1775822181326,
       "type": "file"
-    },
-    {
-      "path": "src\\pty_manager.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775826893665,
-      "type": "directory"
     },
     {
       "path": "src\\main.rs",

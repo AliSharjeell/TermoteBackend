@@ -1735,37 +1735,65 @@ pub async fn proxy_handler(
     }
 
     // Build the base URL for <base> tag injection (everything up to the last slash of the path)
-    let base_url = format!("{}://{}", scheme, host_port);
+    let _base_url = format!("{}://{}", scheme, host_port);
 
     // Make the proxied request - follow redirects automatically
     match reqwest::get(&url).await {
         Ok(resp) => {
             let status = resp.status();
-            let headers = resp.headers().clone();
+            let upstream_headers = resp.headers().clone();
             let body = resp.bytes().await;
 
             match body {
                 Ok(body_bytes) => {
-                    let content_type = headers.get(header::CONTENT_TYPE)
-                        .map(|v| v.to_str().unwrap_or("text/html"))
+                    let content_type = upstream_headers.get(header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
                         .unwrap_or("text/html");
                     let is_html = content_type.contains("text/html") || content_type.contains("application/xhtml");
 
-                    // For HTML responses, inject <base href> so the browser resolves all relative URLs
-                    // through our proxy path automatically - no regex needed
+                    // Proxy path prefix for rewriting root-relative URLs
+                    let proxy_prefix = format!("/proxy/{}/{}", scheme, host_port);
+
+                    // For HTML responses: rewrite root-relative URLs AND inject <base> tag
+                    // <base> alone doesn't work for paths starting with /
                     let final_body = if is_html {
-                        inject_base_tag(body_bytes.as_ref(), &base_url)
+                        rewrite_html_urls(body_bytes.as_ref(), &proxy_prefix)
                     } else {
                         body_bytes.to_vec()
                     };
 
-                    // Build response - forward Content-Type exactly as the upstream returned it
+                    // Build response headers - forward Content-Type exactly as upstream returned it
                     let mut response_headers = vec![
                         (header::CONTENT_TYPE, HeaderValue::from_str(content_type)
                             .unwrap_or(HeaderValue::from_static("application/octet-stream"))),
                         (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
                     ];
 
+                    // Forward cache headers and other safe headers from upstream
+                    for (name, value) in upstream_headers.iter() {
+                        let name_lower = name.as_str().to_lowercase();
+                        // Skip security headers that would block iframe embedding
+                        if name_lower == "x-frame-options"
+                            || name_lower == "content-security-policy"
+                            || name_lower == "content-security-policy-report-only"
+                        {
+                            continue;
+                        }
+                        // Skip content-length since we may have rewritten the body
+                        if name_lower == "content-length" && is_html {
+                            continue;
+                        }
+                        if let Ok(v) = value.to_str() {
+                            if let (Ok(header_name), Ok(header_value)) = (
+                                name.as_str().parse::<axum::http::HeaderName>(),
+                                HeaderValue::from_str(v),
+                            ) {
+                                response_headers.push((header_name, header_value));
+                            }
+                        }
+                    }
+
+                    // Set content-length if we rewrote HTML
                     if is_html {
                         response_headers.push((header::CONTENT_LENGTH, HeaderValue::from(final_body.len())));
                     }
@@ -1790,20 +1818,43 @@ pub async fn proxy_handler(
     }
 }
 
-/// Inject a <base href> tag into HTML pages so the browser resolves all relative URLs
-/// (CSS, JS, images, fonts) through the proxy path automatically.
-/// This is far more robust than regex-replacing individual URL attributes.
-fn inject_base_tag(content: &[u8], base_url: &str) -> Vec<u8> {
+/// Rewrite root-relative URLs in HTML so they go through the proxy.
+/// Browser ignores <base> for paths starting with /, so we must prefix them.
+fn rewrite_html_urls(content: &[u8], proxy_prefix: &str) -> Vec<u8> {
     let html = String::from_utf8_lossy(content);
-    let base_tag = format!(r#"<base href="{}">"#, base_url);
 
-    // Inject immediately after <head> tag (case-insensitive), if present
+    // Inject <base href> tag after <head> for non-root-relative URLs
     static HEAD_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(r"(?i)<head([^>]*)>").unwrap()
     });
 
-    let result = HEAD_RE.replace(&html, |caps: &regex::Captures| {
+    let base_tag = format!(r#"<base href="{}">"#, proxy_prefix);
+    let with_base = HEAD_RE.replace(&html, |caps: &regex::Captures| {
         format!("<head{}>{}", &caps[1], base_tag)
+    });
+
+    // Rewrite root-relative href="/path" -> href="/proxy/http/host:port/path"
+    static HREF_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"href="(/[^"]+)""#).unwrap()
+    });
+    let after_href = HREF_RE.replace_all(&with_base, |caps: &regex::Captures| {
+        format!(r#"href="{}{}""#, proxy_prefix, &caps[1])
+    });
+
+    // Rewrite root-relative src="/path" -> src="/proxy/http/host:port/path"
+    static SRC_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"src="(/[^"]+)""#).unwrap()
+    });
+    let after_src = SRC_RE.replace_all(&after_href, |caps: &regex::Captures| {
+        format!(r#"src="{}{}""#, proxy_prefix, &caps[1])
+    });
+
+    // Rewrite root-relative action="/path" -> action="/proxy/http/host:port/path"
+    static ACTION_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"action="(/[^"]+)""#).unwrap()
+    });
+    let result = ACTION_RE.replace_all(&after_src, |caps: &regex::Captures| {
+        format!(r#"action="{}{}""#, proxy_prefix, &caps[1])
     });
 
     result.to_string().into_bytes()

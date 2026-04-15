@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd C:/AppsNew/TermoteFull && git add -v TermoteUI/src/components/ProfileSidebar.tsx Termote/install.ps1 && git diff --cached --stat\",\"description\":\"Stage changed files\"}",
+  "tool_input_preview": "{\"command\":\"cd C:/AppsNew/TermoteFull && git status\"}",
   "error": "Exit code 128\nfatal: not a git repository (or any of the parent directories): .git",
-  "timestamp": "2026-04-10T14:37:55.949Z",
+  "timestamp": "2026-04-15T05:56:56.165Z",
   "retry_count": 1
 }
