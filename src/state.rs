@@ -354,6 +354,8 @@ pub struct AppState {
     pub security: Arc<RwLock<SecurityState>>,
     /// Session state persistence path
     session_path: PathBuf,
+    /// Last write timestamps per pane for debounce flush
+    last_write_time: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 /// Session state for persistence (simplified - no PTY state)
@@ -452,7 +454,37 @@ impl AppState {
             connected_devices: Arc::new(RwLock::new(HashMap::new())),
             security: Arc::new(RwLock::new(SecurityState::new(config_dir))),
             session_path,
+            last_write_time: Arc::new(RwLock::new(HashMap::new())),
         };
+
+        // Spawn debounce flush background task
+        {
+            let state_for_flush = Arc::new(state.clone());
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    let last_write = state_for_flush.last_write_time.write().await;
+                    let mut to_flush: Vec<String> = Vec::new();
+                    for (pane_id, last_write_at) in last_write.iter() {
+                        if now - last_write_at >= 2 {
+                            to_flush.push(pane_id.clone());
+                        }
+                    }
+                    drop(last_write);
+                    if !to_flush.is_empty() {
+                        state_for_flush.save_session().await;
+                        let mut last_write = state_for_flush.last_write_time.write().await;
+                        for pane_id in to_flush {
+                            last_write.remove(&pane_id);
+                        }
+                    }
+                }
+            });
+        }
 
         // Respawn all panes at their saved directories
         for pane_info in loaded_panes_info {
@@ -620,6 +652,13 @@ impl AppState {
                 pane.image_data = Some(id);
             }
         }
+        // Record write timestamp for debounce flush
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut last_write = self.last_write_time.write().await;
+        last_write.insert(pane_id.to_string(), now);
     }
 
     /// Gets active pane IDs.
