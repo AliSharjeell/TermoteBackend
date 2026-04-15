@@ -600,6 +600,28 @@ impl AppState {
         panes.values().map(PaneInfo::from).collect()
     }
 
+    /// Updates a pane's content fields.
+    pub async fn update_pane_content(
+        &self,
+        pane_id: &str,
+        note_content: Option<String>,
+        whiteboard_data: Option<String>,
+        image_data: Option<String>,
+    ) {
+        let mut panes = self.panes.write().await;
+        if let Some(pane) = panes.get_mut(pane_id) {
+            if let Some(nc) = note_content {
+                pane.note_content = Some(nc);
+            }
+            if let Some(wd) = whiteboard_data {
+                pane.whiteboard_data = Some(wd);
+            }
+            if let Some(id) = image_data {
+                pane.image_data = Some(id);
+            }
+        }
+    }
+
     /// Gets active pane IDs.
     pub async fn get_active_panes(&self) -> Vec<String> {
         let active = self.active_panes.read().await;

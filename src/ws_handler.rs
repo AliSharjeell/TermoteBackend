@@ -1631,6 +1631,20 @@ async fn handle_client_message(
                 }
             }
         }
+
+        ClientMessage::UpdatePaneContent { pane_id, note_content, whiteboard_data, image_data } => {
+            info!("Update pane content: {}", pane_id);
+            state.update_pane_content(&pane_id, note_content.clone(), whiteboard_data.clone(), image_data.clone()).await;
+            // Broadcast content update to all clients
+            let _ = state.broadcast_tx.send(ServerMessage::PaneContentUpdated {
+                pane_id: pane_id.clone(),
+                note_content,
+                whiteboard_data,
+                image_data,
+            });
+            // Persist session state
+            state.save_session().await;
+        }
     }
 
     Ok(())

@@ -143,6 +143,15 @@ pub enum ClientMessage {
     /// Spawn Lazygit TUI in a new PTY at the specified working directory.
     #[serde(rename = "spawn_lazygit")]
     SpawnLazygit { pane_id: String, cwd: String },
+
+    /// Update a pane's content (notes, whiteboard, image).
+    #[serde(rename = "update_pane_content")]
+    UpdatePaneContent {
+        pane_id: String,
+        note_content: Option<String>,
+        whiteboard_data: Option<String>,
+        image_data: Option<String>,
+    },
 }
 
 /// Server to client messages.
@@ -282,6 +291,25 @@ pub enum ServerMessage {
     LazygitSpawned {
         pane_id: String,
         cwd: String,
+    },
+
+    /// Full state sync sent to a new client on connect.
+    #[serde(rename = "full_state_sync")]
+    FullStateSync {
+        panes: Vec<PaneInfo>,
+        active_panes: Vec<String>,
+        floating_panes: Vec<String>,
+        groups: Vec<PaneGroupInfo>,
+        scrollback_buffers: std::collections::HashMap<String, String>,
+    },
+
+    /// A pane's content was updated (notes, whiteboard, image).
+    #[serde(rename = "pane_content_updated")]
+    PaneContentUpdated {
+        pane_id: String,
+        note_content: Option<String>,
+        whiteboard_data: Option<String>,
+        image_data: Option<String>,
     },
 }
 
