@@ -59,46 +59,17 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 
 # 3. Install lazygit (required for Git sidebar feature)
 Write-Host "[3/9] Installing lazygit (Git sidebar feature)..." -ForegroundColor Yellow
-$lazygitInstalled = $false
-
-# Try winget first (preferred)
 if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host "  Installing via winget..." -ForegroundColor Gray
-    $wingetResult = winget install --id GitHub.lazygit --accept-package-agreements --accept-source-agreements --silent 2>&1
+    winget install --id GitHub.lazygit --accept-package-agreements --accept-source-agreements --silent
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  Lazygit installed via winget!" -ForegroundColor Green
-        $lazygitInstalled = $true
-    }
-}
-
-# Fallback: direct download from GitHub releases
-if (-not $lazygitInstalled) {
-    Write-Host "  Installing lazygit via direct download..." -ForegroundColor Gray
-    $lazygitDir = "$env:LOCALAPPDATA\lazygit"
-    $lazygitZip = "$env:TEMP\lazygit.zip"
-    $lazygitUrl = "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_windows_amd64.zip"
-
-    if (-not (Test-Path $lazygitDir)) {
-        New-Item -Type Directory -Force $lazygitDir | Out-Null
-    }
-
-    curl.exe -L --silent --show-error -o $lazygitZip $lazygitUrl
-    if ((Test-Path $lazygitZip) -and (Get-Item $lazygitZip).Length -gt 1MB) {
-        Expand-Archive -Path $lazygitZip -DestinationPath $lazygitDir -Force
-        Remove-Item $lazygitZip -Force -ErrorAction SilentlyContinue
-
-        # Add to PATH for current session
-        $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-        if ($userPath -notlike "*$lazygitDir*") {
-            [Environment]::SetEnvironmentVariable("PATH", "$userPath;$lazygitDir", "User")
-            $env:PATH += ";$lazygitDir"
-        }
-        Write-Host "  Lazygit installed to $lazygitDir!" -ForegroundColor Green
-        $lazygitInstalled = $true
+        Write-Host "  Lazygit installed!" -ForegroundColor Green
     } else {
-        Write-Host "  WARNING: Failed to install lazygit. Git sidebar will not work." -ForegroundColor Yellow
-        Write-Host "  Install manually: winget install GitHub.lazygit" -ForegroundColor Gray
+        Write-Host "  WARNING: Lazygit install failed. Git sidebar will not work." -ForegroundColor Yellow
+        Write-Host "  Install manually after setup: winget install GitHub.lazygit" -ForegroundColor Gray
     }
+} else {
+    Write-Host "  winget not found. Install lazygit manually: winget install GitHub.lazygit" -ForegroundColor Yellow
 }
 
 # 4. Installing Dev Tunnels with a sanity check
