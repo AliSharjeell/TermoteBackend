@@ -388,18 +388,19 @@ pub struct PaneInfo {
     /// Current working directory of the pane's shell.
     pub cwd: Option<String>,
     /// Type of pane: "terminal" | "note" | "image" | "whiteboard" | "browser"
-    #[serde(rename = "paneType")]
-    pub pane_type: String,
+    #[serde(rename = "paneType", default)]
+    pub pane_type: Option<String>,
     /// Content for note panes (markdown text).
-    #[serde(rename = "noteContent")]
+    #[serde(rename = "noteContent", default)]
     pub note_content: Option<String>,
     /// Content for whiteboard panes (tldraw JSON).
-    #[serde(rename = "whiteboardData")]
+    #[serde(rename = "whiteboardData", default)]
     pub whiteboard_data: Option<String>,
     /// Content for image panes (base64).
-    #[serde(rename = "imageData")]
+    #[serde(rename = "imageData", default)]
     pub image_data: Option<String>,
     /// URL for browser panes.
+    #[serde(default)]
     pub url: Option<String>,
 }
 
@@ -414,7 +415,7 @@ impl From<&Pane> for PaneInfo {
             rows: pane.rows,
             group_id: pane.group_id.clone(),
             cwd: pane.cwd.clone(),
-            pane_type: pane.pane_type.clone(),
+            pane_type: Some(pane.pane_type.clone()),
             note_content: pane.note_content.clone(),
             whiteboard_data: pane.whiteboard_data.clone(),
             image_data: pane.image_data.clone(),

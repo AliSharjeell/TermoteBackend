@@ -570,7 +570,7 @@ impl AppState {
             rows: p.rows,
             group_id: p.group_id.clone(),
             cwd: p.cwd.clone(),
-            pane_type: p.pane_type.clone(),
+            pane_type: Some(p.pane_type.clone()),
             note_content: p.note_content.clone(),
             whiteboard_data: p.whiteboard_data.clone(),
             image_data: p.image_data.clone(),
