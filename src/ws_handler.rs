@@ -24,6 +24,7 @@ use tracing::{info, error, warn};
 
 use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo, DirectoryItem};
 use crate::state::{AppState, ConnectedDevice, PaneGroup};
+use regex::Regex;
 
 /// Decode base64 string to bytes.
 fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
@@ -1721,31 +1722,90 @@ pub async fn proxy_handler(
         return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], "Only local URLs allowed").into_response();
     }
 
+    // Extract base URL for rewriting relative paths (e.g. "http://localhost:3000")
+    let base_url = if let Some(pos) = url.find("://") {
+        let after_scheme = &url[pos + 3..];
+        if let Some(slash) = after_scheme.find('/') {
+            format!("{}://{}", &url[..pos + 3], &after_scheme[..slash])
+        } else {
+            url.clone()
+        }
+    } else {
+        url.clone()
+    };
+
     // Make the proxied request using the local machine's network
-    match reqwest::get(url).await {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none()) // handle redirects manually
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    match client.get(url).send().await {
         Ok(resp) => {
-            let status = resp.status();
-            let headers = resp.headers().clone();
-            let body = resp.bytes().await;
+            // Handle redirects manually - follow up to 10 redirects
+            let mut final_resp = resp;
+            let mut redirect_err: Option<String> = None;
+            for _ in 0..10 {
+                if final_resp.status().is_redirection() {
+                    if let Some(loc) = final_resp.headers().get(header::LOCATION) {
+                        let loc_str = loc.to_str().unwrap_or("");
+                        // Build absolute URL if relative
+                        let redirect_url = if loc_str.starts_with("http") {
+                            loc_str.to_string()
+                        } else if loc_str.starts_with("//") {
+                            format!("http:{}", loc_str)
+                        } else if loc_str.starts_with("/") {
+                            format!("{}:{}", base_url, loc_str)
+                        } else {
+                            format!("{}/{}", base_url, loc_str)
+                        };
+                        match client.get(&redirect_url).send().await {
+                            Ok(r) => { final_resp = r; continue; }
+                            Err(e) => {
+                                redirect_err = Some(format!("Upstream redirect error: {}", e));
+                                break;
+                            }
+                        };
+                    }
+                }
+                break;
+            }
+
+            if let Some(err_msg) = redirect_err {
+                return (StatusCode::BAD_GATEWAY, [(header::CONTENT_TYPE, "text/plain")], err_msg).into_response();
+            }
+
+            let status = final_resp.status();
+            let headers = final_resp.headers().clone();
+            let body = final_resp.bytes().await;
 
             match body {
                 Ok(body_bytes) => {
+                    let content_type = headers.get(header::CONTENT_TYPE)
+                        .map(|v| v.to_str().unwrap_or("text/html"))
+                        .unwrap_or("text/html");
+                    let is_html = content_type.contains("text/html") || content_type.contains("application/xhtml");
+                    let is_css = content_type.contains("text/css") || content_type == "application/javascript" || content_type == "text/javascript" || content_type == "application/x-javascript";
+
+                    // Rewrite relative URLs in HTML, CSS, and JS responses
+                    let final_body = if is_html || is_css {
+                        rewrite_relative_urls(body_bytes.as_ref(), &base_url)
+                    } else {
+                        body_bytes.to_vec()
+                    };
+
                     // Build response headers - filter out problematic ones
                     let mut response_headers = vec![
-                        (header::CONTENT_TYPE, HeaderValue::from_str(
-                            headers.get(header::CONTENT_TYPE)
-                                .map(|v| v.to_str().unwrap_or("text/html"))
-                                .unwrap_or("text/html")
-                        ).unwrap_or(HeaderValue::from_static("text/html"))),
+                        (header::CONTENT_TYPE, HeaderValue::from_str(content_type)
+                            .unwrap_or(HeaderValue::from_static("text/html"))),
                         (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
                     ];
 
-                    // Copy content-length if present
-                    if let Some(cl) = headers.get(header::CONTENT_LENGTH) {
-                        response_headers.push((header::CONTENT_LENGTH, cl.clone()));
+                    // Update content-length if we rewrote the body
+                    if is_html || is_css {
+                        response_headers.push((header::CONTENT_LENGTH, HeaderValue::from(final_body.len())));
                     }
 
-                    let mut resp = axum::response::Response::new(axum::body::Body::from(body_bytes.to_vec()));
+                    let mut resp = axum::response::Response::new(axum::body::Body::from(final_body));
                     *resp.status_mut() = status;
                     for (k, v) in response_headers {
                         resp.headers_mut().insert(k, v);
@@ -1763,4 +1823,63 @@ pub async fn proxy_handler(
             (StatusCode::BAD_GATEWAY, [(header::CONTENT_TYPE, "text/plain")], format!("Connection failed: {}", e)).into_response()
         }
     }
+}
+
+/// Rewrite relative URLs in HTML/CSS/JS content to point through our proxy.
+/// This fixes assets like <link href="/app.css"> and <script src="/bundle.js">
+/// by converting them to proxy URLs the browser can actually reach.
+fn rewrite_relative_urls(content: &[u8], base_url: &str) -> Vec<u8> {
+    let html = String::from_utf8_lossy(content);
+
+    // Patterns to rewrite:
+    // 1. href="/path" -> href="/proxy?url=base_url/path"
+    // 2. src="/path" -> src="/proxy?url=base_url/path"
+    // 3. url('/path') -> url('/proxy?url=base_url/path')
+    // 4. url("/path") -> url("/proxy?url=base_url/path")
+
+    // Build the encoded base URL for embedding in proxy URLs
+    let encoded_base = urlencoding::encode(base_url);
+
+    // Regex patterns for common relative URL contexts
+    // These capture the path inside quotes, the replacement adds proxy prefix
+    static HREF_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"href="(/[^"]+)""#).unwrap()
+    });
+    static SRC_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"src="(/[^"]+)""#).unwrap()
+    });
+    static URL_SINGLE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"url\('/([^']+)'\)"#).unwrap()
+    });
+    static URL_DOUBLE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"url\("/([^"]+)"\)"#).unwrap()
+    });
+
+    let mut result = html.to_string();
+
+    // Rewrite href="/path" to href="/proxy?url=base_url/path"
+    result = HREF_RE.replace_all(&result, |caps: &regex::Captures| {
+        let path = &caps[1];
+        format!(r#"href="/proxy?url={}{}""#, encoded_base, urlencoding::encode(path))
+    }).to_string();
+
+    // Rewrite src="/path" to src="/proxy?url=base_url/path"
+    result = SRC_RE.replace_all(&result, |caps: &regex::Captures| {
+        let path = &caps[1];
+        format!(r#"src="/proxy?url={}{}""#, encoded_base, urlencoding::encode(path))
+    }).to_string();
+
+    // Rewrite url('/path') in CSS
+    result = URL_SINGLE_RE.replace_all(&result, |caps: &regex::Captures| {
+        let path = &caps[1];
+        format!(r#"url('/proxy?url={}{}')"#, encoded_base, urlencoding::encode(path))
+    }).to_string();
+
+    // Rewrite url("/path") in CSS
+    result = URL_DOUBLE_RE.replace_all(&result, |caps: &regex::Captures| {
+        let path = &caps[1];
+        format!(r#"url("/proxy?url={}{}")"#, encoded_base, urlencoding::encode(path))
+    }).to_string();
+
+    result.into_bytes()
 }
