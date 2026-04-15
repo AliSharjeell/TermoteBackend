@@ -141,21 +141,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, client_addr: Soc
                             message: Some("Authenticated".to_string()),
                         }).await;
 
-                        // Send current state to newly authenticated client (via their own channel)
+                        // Send full state sync to newly authenticated client
                         let panes = state.get_panes_info().await;
                         let active_panes = state.get_active_panes().await;
                         let floating_panes = state.get_floating_panes().await;
                         let groups = state.get_all_groups().await;
-                        let _ = tx.send(ServerMessage::StateUpdate { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone(), groups }).await;
-
-                        // Replay scrollback buffers for all panes to this client
-                        let all_pane_ids: Vec<String> = active_panes.iter().chain(floating_panes.iter()).cloned().collect();
-                        for (pane_id, buffer) in state.get_panes_buffers(&all_pane_ids).await {
-                            if !buffer.is_empty() {
-                                let text = String::from_utf8_lossy(&buffer).to_string();
-                                let _ = tx.send(ServerMessage::Output { pane_id, data: text }).await;
-                            }
-                        }
+                        let scrollback_buffers = state.get_panes_buffers(&active_panes.iter().chain(floating_panes.iter()).cloned().collect::<Vec<_>>()).await
+                            .into_iter().map(|(id, buf)| (id, String::from_utf8_lossy(&buf).to_string())).collect();
+                        let _ = tx.send(ServerMessage::FullStateSync { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone(), groups, scrollback_buffers }).await;
                     } else {
                         warn!("Invalid auth token attempted");
                         let _ = tx.send(ServerMessage::AuthResult {
