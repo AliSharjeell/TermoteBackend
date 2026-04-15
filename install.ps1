@@ -61,15 +61,15 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 Write-Host "[3/9] Installing lazygit (Git sidebar feature)..." -ForegroundColor Yellow
 if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host "  Installing via winget..." -ForegroundColor Gray
-    winget install --id GitHub.lazygit --accept-package-agreements --accept-source-agreements --silent
+    winget install --id JesseDuffield.lazygit --accept-package-agreements --accept-source-agreements --silent
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  Lazygit installed!" -ForegroundColor Green
     } else {
         Write-Host "  WARNING: Lazygit install failed. Git sidebar will not work." -ForegroundColor Yellow
-        Write-Host "  Install manually after setup: winget install GitHub.lazygit" -ForegroundColor Gray
+        Write-Host "  Install manually after setup: winget install JesseDuffield.lazygit" -ForegroundColor Gray
     }
 } else {
-    Write-Host "  winget not found. Install lazygit manually: winget install GitHub.lazygit" -ForegroundColor Yellow
+    Write-Host "  winget not found. Install lazygit manually: winget install JesseDuffield.lazygit" -ForegroundColor Yellow
 }
 
 # 4. Installing Dev Tunnels with a sanity check
