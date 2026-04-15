@@ -1612,10 +1612,14 @@ async fn handle_client_message(
                 Ok((new_pane_id, _pid)) => {
                     info!("Lazygit spawned as pane {} at {}", new_pane_id, cwd);
                     // Notify client that lazygit was spawned
-                    let _ = state.broadcast_tx.send(ServerMessage::LazygitSpawned {
+                    let broadcast_result = state.broadcast_tx.send(ServerMessage::LazygitSpawned {
                         pane_id: new_pane_id.clone(),
                         cwd: cwd.clone(),
                     });
+                    match broadcast_result {
+                        Ok(_) => info!("LazygitSpawned broadcast sent successfully"),
+                        Err(e) => error!("Failed to broadcast LazygitSpawned: {:?}", e),
+                    }
                     // Broadcast state update so the new pane appears
                     broadcast_state_update(state).await;
                 }

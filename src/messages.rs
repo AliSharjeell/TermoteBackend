@@ -344,7 +344,7 @@ impl From<&ConnectedDevice> for DeviceInfo {
 pub struct PaneInfo {
     /// Unique identifier for the pane.
     pub id: String,
-    /// Process ID of the shell.
+    /// Process ID of the shell (0 for non-terminal panes).
     pub pid: u32,
     /// Shell program name.
     pub shell: String,
@@ -359,6 +359,20 @@ pub struct PaneInfo {
     pub group_id: Option<String>,
     /// Current working directory of the pane's shell.
     pub cwd: Option<String>,
+    /// Type of pane: "terminal" | "note" | "image" | "whiteboard" | "browser"
+    #[serde(rename = "paneType")]
+    pub pane_type: String,
+    /// Content for note panes (markdown text).
+    #[serde(rename = "noteContent")]
+    pub note_content: Option<String>,
+    /// Content for whiteboard panes (tldraw JSON).
+    #[serde(rename = "whiteboardData")]
+    pub whiteboard_data: Option<String>,
+    /// Content for image panes (base64).
+    #[serde(rename = "imageData")]
+    pub image_data: Option<String>,
+    /// URL for browser panes.
+    pub url: Option<String>,
 }
 
 impl From<&Pane> for PaneInfo {
@@ -372,6 +386,11 @@ impl From<&Pane> for PaneInfo {
             rows: pane.rows,
             group_id: pane.group_id.clone(),
             cwd: pane.cwd.clone(),
+            pane_type: pane.pane_type.clone(),
+            note_content: pane.note_content.clone(),
+            whiteboard_data: pane.whiteboard_data.clone(),
+            image_data: pane.image_data.clone(),
+            url: pane.url.clone(),
         }
     }
 }

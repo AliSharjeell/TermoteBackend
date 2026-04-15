@@ -209,7 +209,7 @@ impl SecurityState {
 pub struct Pane {
     /// Unique identifier for the pane.
     pub id: String,
-    /// Process ID of the spawned shell.
+    /// Process ID of the spawned shell (0 for non-terminal panes).
     pub pid: u32,
     /// Shell program name.
     pub shell: String,
@@ -225,10 +225,20 @@ pub struct Pane {
     pub group_id: Option<String>,
     /// Current working directory of this pane's shell.
     pub cwd: Option<String>,
+    /// Type of pane: "terminal" | "note" | "image" | "whiteboard" | "browser"
+    pub(crate) pane_type: String,
+    /// Content for note panes (markdown text).
+    pub(crate) note_content: Option<String>,
+    /// Content for whiteboard panes (tldraw JSON).
+    pub(crate) whiteboard_data: Option<String>,
+    /// Content for image panes (base64).
+    pub(crate) image_data: Option<String>,
+    /// URL for browser panes.
+    pub(crate) url: Option<String>,
 }
 
 impl Pane {
-    /// Creates a new Pane with a generated UUID.
+    /// Creates a new terminal Pane with a generated UUID.
     pub fn new(pid: u32, shell: String, cols: u16, rows: u16) -> Self {
         let name = format!("{} ({})", shell, pid);
         Self {
@@ -241,7 +251,42 @@ impl Pane {
             buffer: Vec::new(),
             group_id: None,
             cwd: None,
+            pane_type: "terminal".to_string(),
+            note_content: None,
+            whiteboard_data: None,
+            image_data: None,
+            url: None,
         }
+    }
+
+    /// Creates a new non-terminal Pane with a generated UUID.
+    pub fn new_non_terminal(pane_type: &str, name: &str) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            pid: 0,
+            shell: String::new(),
+            name: name.to_string(),
+            cols: 80,
+            rows: 24,
+            buffer: Vec::new(),
+            group_id: None,
+            cwd: None,
+            pane_type: pane_type.to_string(),
+            note_content: None,
+            whiteboard_data: None,
+            image_data: None,
+            url: None,
+        }
+    }
+
+    /// Returns the pane type.
+    pub fn pane_type(&self) -> &str {
+        &self.pane_type
+    }
+
+    /// Sets the pane type.
+    pub fn set_pane_type(&mut self, pane_type: &str) {
+        self.pane_type = pane_type.to_string();
     }
 
     /// Appends data to the scrollback buffer, capping at MAX_BUFFER_SIZE bytes.
@@ -493,6 +538,11 @@ impl AppState {
             rows: p.rows,
             group_id: p.group_id.clone(),
             cwd: p.cwd.clone(),
+            pane_type: p.pane_type.clone(),
+            note_content: p.note_content.clone(),
+            whiteboard_data: p.whiteboard_data.clone(),
+            image_data: p.image_data.clone(),
+            url: p.url.clone(),
         }).collect();
         let groups_info: Vec<PaneGroupInfo> = groups.values().map(|g| PaneGroupInfo::from(g)).collect();
 
