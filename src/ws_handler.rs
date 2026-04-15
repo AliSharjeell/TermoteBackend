@@ -1714,19 +1714,20 @@ pub async fn proxy_handler(
     let url = format!("{}://{}{}", scheme, host_port, path);
 
     // Validate host - only allow localhost and local IPs
-    let is_localhost = host_port == "localhost" || host_port == "127.0.0.1" || host_port == "::1"
-        || host_port.starts_with("192.168.")
-        || host_port.starts_with("10.")
-        || (host_port.starts_with("172.") && {
-            // Check 172.16-31.x.x range
-            if let Some(dot2) = host_port.strip_prefix("172.") {
+    // Strip port from host_port for validation (host_port may be "localhost:3000")
+    let host_only = host_port.split(':').next().unwrap_or(host_port);
+    let is_localhost = host_only == "localhost" || host_only == "127.0.0.1" || host_only == "::1"
+        || host_only.starts_with("192.168.")
+        || host_only.starts_with("10.")
+        || (host_only.starts_with("172.") && {
+            if let Some(dot2) = host_only.strip_prefix("172.") {
                 if let Some(dot3) = dot2.find('.') {
                     let third: u32 = dot2[..dot3].parse().unwrap_or(0);
                     third >= 16 && third <= 31
                 } else { false }
             } else { false }
         })
-        || host_port.ends_with(".local");
+        || host_only.ends_with(".local");
 
     if !is_localhost {
         warn!("Proxy blocked request to non-local host: {}", host_port);
