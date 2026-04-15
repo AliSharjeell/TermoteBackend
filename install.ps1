@@ -443,7 +443,7 @@ Write-Host '    $env:PATH = [System.Environment]::GetEnvironmentVariable("Path",
 Write-Host ""
 
 # Was: & "$termoteDir\backend\start.ps1"
-& "$installDir\backend\start.ps1"
+& "$installDir\start.ps1"
 
 
 
