@@ -13,12 +13,12 @@
 
 Turn any browser into a full-powered, multi-pane terminal for your PC — instantly. No SSH, no tmux, no setup.
 
-**Access the Web Client:** [termote.vercel.app](https://termote.vercel.app)
+**Install the desktop app:** use the Tauri installer from [TermoteUI](https://github.com/AliSharjeell/TermoteUI). This backend repo is bundled into that desktop GUI as a sidecar.
 
 </div>
 
 ---
-Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your Windows machine's command line from any device with a browser.
+Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your machine's command line from any device with a browser. The supported end-user install is the Tauri desktop GUI from TermoteUI, which runs this Rust backend locally and forwards the same local GUI through Microsoft Dev Tunnels for mobile access.
 
 ## Core Features
 
@@ -27,7 +27,7 @@ Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punchin
 | **Anywhere, Any Network** | Ditch the VPNs and port forwarding. Termote securely punches through NATs and firewalls, giving you instant access to your machine whether you are on the same Wi-Fi or halfway across the world. |
 | **Multi-Pane Terminal (Like tmux, but visual)** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
 | **Smart Single-Instance** | Already have Termote running? Typing `termote` in a new local folder or clicking "Open with Termote" won't spawn a redundant server. It intelligently connects to your active session and opens a new pane for that directory. |
-| **Zero-Install Browser GUI** | Forget downloading bulky SSH clients on your phone or tablet. Any device with a browser becomes your command center with a beautiful, responsive UI. |
+| **Desktop GUI + Mobile Browser** | Install the Tauri GUI on your PC, then use the Mobile Access button to forward the same local GUI to your phone through Dev Tunnels. |
 | **Runs directly on your PC (no cloud, no lag)** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
 | **Drag-and-Drop File Transfer** | Drag files directly into any terminal pane to upload them to that pane's working directory. |
 | **Security & Device Management** | View connected devices, kick sessions, and ban IP addresses directly from the UI. |
@@ -53,21 +53,43 @@ You are on a restrictive school or corporate Wi-Fi network that aggressively blo
 
 ## 60-Second Setup
 
-1. Run the install command
-2. Termote UI launches
-3. Scan the QR code for your phone or copy the link for other devices
-4. Control your PC terminal from anywhere
+1. Install or build the TermoteUI Tauri desktop app
+2. Launch Termote on your PC
+3. Click Mobile Access
+4. Scan the QR code or copy the link for your phone
 
 ## Installation
 
-### Quick Install (PowerShell)
+### Recommended: Desktop App
 
-Run this one-liner on your Windows machine:
+Termote is no longer CLI-first. Install the desktop GUI from the TermoteUI releases page, or build it from source with both repos side by side:
+
+```powershell
+mkdir C:\AppsNew\TermoteFull
+cd C:\AppsNew\TermoteFull
+git clone https://github.com/AliSharjeell/Termote.git
+git clone https://github.com/AliSharjeell/TermoteUI.git
+cd TermoteUI
+npm install
+npm run tauri:build
+```
+
+The Tauri build exports the GUI, builds/prepares this Rust backend as a sidecar, and writes installer artifacts under:
+
+```text
+TermoteUI\src-tauri\target\release\bundle
+```
+
+Run the installed app. It starts this backend on `127.0.0.1:9090` and serves the bundled GUI from the same port. The Mobile Access button starts Microsoft Dev Tunnels for that port, so your phone opens the same local app through the tunnel.
+
+### Legacy Backend-Only Install
+
+This PowerShell installer is kept for backend/CLI development and compatibility. New users should prefer the desktop installer above.
 
 ```powershell
 powershell -c "irm https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1 | iex"
 ```
-> **Note:** On your very first run, a browser window will pop up asking you to authenticate with your Microsoft account. This is a one-time setup required by Microsoft Dev Tunnels to securely route your connection.
+> **Note:** The desktop app can use anonymous Dev Tunnels from the GUI. The legacy CLI installer may still ask you to authenticate with Microsoft Dev Tunnels.
 
 **Troubleshooting:** If the `termote` command is not found immediately after installation, restart your terminal or run this to refresh your environment variables:
 
@@ -77,16 +99,17 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 
 ## Connecting Devices (QR Code & Sharing)
 
-Termote makes it incredibly easy to jump from your PC to your phone or another laptop right from the web interface. 
+Termote makes it easy to jump from your PC to your phone or another laptop right from the desktop GUI.
 
 When you open your Termote dashboard, look for the connection tools built directly into the UI:
 
-* **QR Code for Mobile:** Click the QR code button in the web UI and scan it with your phone's camera to instantly open your terminal session on your mobile device.
-* **Quick Share Link:** Use the shareable link button to copy your secure tunnel URL and password, ready to paste into any browser or send to a teammate.
+* **Mobile Access:** Click the Mobile Access button to start a Dev Tunnel for the local GUI/backend port.
+* **QR Code for Mobile:** Open the profile panel and scan the QR code with your phone's camera.
+* **Quick Share Link:** Copy the generated mobile URL and password from the GUI.
 
-## Available Commands
+## Legacy CLI Commands
 
-After installation, the following commands are available in your terminal:
+After the backend-only installer, the following commands are available in your terminal:
 
 | Command | Description |
 |---------|-------------|
@@ -112,7 +135,8 @@ After installation, the following commands are available in your terminal:
 ## Security
 
 - End-to-end encrypted via HTTPS/WebSockets
-- Auth required (Microsoft Dev Tunnels)
+- Termote auth token required for every browser session
+- Dev Tunnels can be anonymous; the Termote token remains the app-level gate
 - No command logging or data storage
 - Runs locally on your machine
 
