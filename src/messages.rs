@@ -140,10 +140,6 @@ pub enum ClientMessage {
     #[serde(rename = "kill_process")]
     KillProcess { pid: u32 },
 
-    /// Spawn Lazygit TUI in a new PTY at the specified working directory.
-    #[serde(rename = "spawn_lazygit")]
-    SpawnLazygit { pane_id: String, cwd: String },
-
     /// Update a pane's content (notes, whiteboard, image).
     #[serde(rename = "update_pane_content")]
     UpdatePaneContent {
@@ -284,13 +280,6 @@ pub enum ServerMessage {
         pid: u32,
         success: bool,
         message: String,
-    },
-
-    /// Lazygit was spawned in a new PTY.
-    #[serde(rename = "lazygit_spawned")]
-    LazygitSpawned {
-        pane_id: String,
-        cwd: String,
     },
 
     /// Full state sync sent to a new client on connect.

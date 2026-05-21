@@ -57,23 +57,8 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     Write-Host "[2/8] Rust already installed, skipping..." -ForegroundColor Gray
 }
 
-# 3. Install lazygit (required for Git sidebar feature)
-Write-Host "[3/9] Installing lazygit (Git sidebar feature)..." -ForegroundColor Yellow
-if (Get-Command winget -ErrorAction SilentlyContinue) {
-    Write-Host "  Installing via winget..." -ForegroundColor Gray
-    winget install --id JesseDuffield.lazygit --accept-package-agreements --accept-source-agreements --silent
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "  Lazygit installed!" -ForegroundColor Green
-    } else {
-        Write-Host "  WARNING: Lazygit install failed. Git sidebar will not work." -ForegroundColor Yellow
-        Write-Host "  Install manually after setup: winget install JesseDuffield.lazygit" -ForegroundColor Gray
-    }
-} else {
-    Write-Host "  winget not found. Install lazygit manually: winget install JesseDuffield.lazygit" -ForegroundColor Yellow
-}
-
-# 4. Installing Dev Tunnels with a sanity check
-Write-Host "[4/9] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
+# 3. Installing Dev Tunnels with a sanity check
+Write-Host "[3/8] Installing Microsoft Dev Tunnels CLI..." -ForegroundColor Yellow
 $devtunnelPath = "$installDir\bin\devtunnel.exe"
 
 # Ensure bin directory exists
@@ -99,8 +84,8 @@ if (-not (Test-Path $devtunnelPath) -or (Get-Item $devtunnelPath).Length -lt 1MB
     exit 1
 }
 Write-Host "  Dev Tunnels CLI installed and verified!" -ForegroundColor Green
-# 5. Login to Microsoft Dev Tunnels (Official CLI Method)
-Write-Host "[5/9] Microsoft Dev Tunnels login..." -ForegroundColor Yellow
+# 4. Login to Microsoft Dev Tunnels (Official CLI Method)
+Write-Host "[4/8] Microsoft Dev Tunnels login..." -ForegroundColor Yellow
 Write-Host "  A browser window will now open for authentication." -ForegroundColor Cyan
 Write-Host "  If the browser doesn't open, copy the link printed below." -ForegroundColor Gray
 Write-Host ""
@@ -113,8 +98,8 @@ if ($LASTEXITCODE -ne 0) {
 } else {
     Write-Host "  Login successful!" -ForegroundColor Green
 }
-# 6. Compile the Rust backend
-Write-Host "[6/9] Compiling Rust backend..." -ForegroundColor Yellow
+# 5. Compile the Rust backend
+Write-Host "[5/8] Compiling Rust backend..." -ForegroundColor Yellow
 Set-Location $backendDir
 cargo build --release
 if ($LASTEXITCODE -ne 0) {
@@ -136,8 +121,8 @@ Copy-Item -Path "$PSScriptRoot\target\release\termote.exe" `
           -Destination "$targetDir\termote.exe" -Force
 Write-Host "  Binary synced to installed location." -ForegroundColor Green
 
-# 7. Create shim directory and files
-Write-Host "[7/9] Setting up termote commands..." -ForegroundColor Yellow
+# 6. Create shim directory and files
+Write-Host "[6/8] Setting up termote commands..." -ForegroundColor Yellow
 
 if (-not (Test-Path $shimDir)) {
     New-Item -Type Directory -Force $shimDir | Out-Null
@@ -386,8 +371,8 @@ if ($userPath -notlike "*$shimDir*") {
 }
 Write-Host "  Commands installed." -ForegroundColor Green
 
-# 8. Add "Open with Termote" context menu
-Write-Host "[8/9] Adding Windows Explorer context menu..." -ForegroundColor Yellow
+# 7. Add "Open with Termote" context menu
+Write-Host "[7/8] Adding Windows Explorer context menu..." -ForegroundColor Yellow
 
 $termoteFileHandler = "$shimDir\termote-file.ps1"
 $handlerLines = @(
@@ -423,8 +408,8 @@ Set-ItemProperty -Path $cmdPath2 -Name "(Default)" -Value "powershell -WindowSty
 
 Write-Host "  Context menu installed." -ForegroundColor Green
 
-# 9. Start termote
-Write-Host "[9/9] Starting Termote server..." -ForegroundColor Yellow
+# 8. Start termote
+Write-Host "[8/8] Starting Termote server..." -ForegroundColor Yellow
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
@@ -444,7 +429,5 @@ Write-Host ""
 
 # Was: & "$termoteDir\backend\start.ps1"
 & "$installDir\start.ps1"
-
-
 
 
