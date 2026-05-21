@@ -13,6 +13,47 @@ use tracing::{info, error, warn};
 
 use crate::state::AppState;
 
+/// Returns the platform's preferred interactive shell.
+pub fn default_shell_program() -> String {
+    #[cfg(windows)]
+    {
+        "powershell.exe".to_string()
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+    }
+}
+
+/// Maps frontend shell aliases to a platform-appropriate executable.
+pub fn resolve_shell_program(shell: &str) -> String {
+    let trimmed = shell.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+        return default_shell_program();
+    }
+
+    #[cfg(windows)]
+    {
+        match trimmed.to_ascii_lowercase().as_str() {
+            "powershell" => "powershell.exe".to_string(),
+            "cmd" => "cmd.exe".to_string(),
+            "wsl" => "wsl.exe".to_string(),
+            _ => trimmed.to_string(),
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        match trimmed.to_ascii_lowercase().as_str() {
+            "powershell" | "powershell.exe" | "cmd" | "cmd.exe" | "wsl" | "wsl.exe" => {
+                default_shell_program()
+            }
+            _ => trimmed.to_string(),
+        }
+    }
+}
+
 /// Manages PTY instances and their associated tasks.
 pub struct PtyManager {
     /// Map of pane_id to PtyInstance
@@ -41,7 +82,6 @@ impl PtyManager {
     /// Spawns a new PTY with the specified shell.
     ///
     /// Returns the pane ID and PID on success.
-    #[cfg(windows)]
     pub fn spawn_pty(
         &self,
         shell: &str,
@@ -59,14 +99,9 @@ impl PtyManager {
             pixel_height: 0,
         })?;
 
-        // Determine shell command
-        let shell_program = if shell.is_empty() {
-            "powershell.exe"
-        } else {
-            shell
-        };
+        let shell_program = resolve_shell_program(shell);
 
-        let mut cmd = CommandBuilder::new(shell_program);
+        let mut cmd = CommandBuilder::new(&shell_program);
         cmd.env("TERM", "xterm-256color");
         // Set window title
         cmd.env("PROMPT", "$P$G");
@@ -220,7 +255,6 @@ impl PtyManager {
     }
 
     /// Resizes a PTY pane.
-    #[cfg(windows)]
     pub fn resize_pty(
         &self,
         pane_id: &str,

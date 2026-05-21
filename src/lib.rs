@@ -24,5 +24,5 @@ pub mod ws_handler;
 pub use auth::{validate_token, AuthResult};
 pub use messages::{ClientMessage, ServerMessage, PaneInfo, PaneGroupInfo};
 pub use state::{AppState, Pane, PaneGroup};
-pub use pty_manager::PtyManager;
+pub use pty_manager::{default_shell_program, resolve_shell_program, PtyManager};
 pub use ws_handler::{create_router, ws_handler, health_handler};

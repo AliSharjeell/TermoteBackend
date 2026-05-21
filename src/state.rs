@@ -13,7 +13,7 @@ use tracing::{info, warn, debug};
 use uuid::Uuid;
 
 use crate::messages::{PaneInfo, PaneGroupInfo};
-use crate::pty_manager::PtyManager;
+use crate::pty_manager::{resolve_shell_program, PtyManager};
 
 /// Represents a connected device/client session.
 #[derive(Clone, Debug)]
@@ -370,12 +370,26 @@ struct SessionState {
 impl AppState {
     /// Creates a new AppState with the given auth token.
     pub async fn new(auth_token: String, frontend_url: String, tunnel_url: String, cold_start_dir: Option<String>) -> Self {
-        let (broadcast_tx, _) = broadcast::channel(100);
+        let config_dir = std::env::var("TERMOTE_CONFIG_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                dirs::config_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("termote")
+            });
 
-        // Initialize config directory for security state
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("termote");
+        Self::new_with_config_dir(auth_token, frontend_url, tunnel_url, cold_start_dir, config_dir).await
+    }
+
+    /// Creates a new AppState using an explicit config directory.
+    pub async fn new_with_config_dir(
+        auth_token: String,
+        frontend_url: String,
+        tunnel_url: String,
+        cold_start_dir: Option<String>,
+        config_dir: PathBuf,
+    ) -> Self {
+        let (broadcast_tx, _) = broadcast::channel(100);
 
         let session_path = config_dir.join("session.json");
 
@@ -831,11 +845,11 @@ impl AppState {
         dir: &str,
         shell: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let shell_to_use = if shell.is_empty() { "powershell.exe" } else { shell };
+        let shell_to_use = resolve_shell_program(shell);
 
         // Spawn the PTY
         let (pane_id, pid) = self.pty_manager.spawn_pty(
-            shell_to_use,
+            &shell_to_use,
             80,
             24,
             self.clone(),
@@ -843,7 +857,7 @@ impl AppState {
         )?;
 
         // Create pane with correct ID and working directory
-        let mut pane = Pane::new(pid, shell_to_use.to_string(), 80, 24);
+        let mut pane = Pane::new(pid, shell_to_use.clone(), 80, 24);
         pane.id = pane_id.clone();
         pane.cwd = Some(dir.to_string());
         self.add_pane(pane).await;
@@ -983,9 +997,19 @@ impl AppState {
 mod tests {
     use super::*;
 
+    fn test_config_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("termote-test-{}", Uuid::new_v4()))
+    }
+
     #[tokio::test]
     async fn test_app_state_pane_management() {
-        let state = AppState::new("test_token".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None).await;
+        let state = AppState::new_with_config_dir(
+            "test_token".to_string(),
+            "http://localhost".to_string(),
+            "ws://localhost".to_string(),
+            None,
+            test_config_dir(),
+        ).await;
 
         // Initially empty
         assert!(state.get_panes_info().await.is_empty());
@@ -1008,10 +1032,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_authentication() {
-        let state = AppState::new("secret123".to_string(), "http://localhost".to_string(), "ws://localhost".to_string(), None).await;
+        let state = AppState::new_with_config_dir(
+            "secret123".to_string(),
+            "http://localhost".to_string(),
+            "ws://localhost".to_string(),
+            None,
+            test_config_dir(),
+        ).await;
 
         assert!(!state.is_authenticated().await);
-        assert!(state.validate_token("wrong").await);
         assert!(!state.validate_token("wrong").await);
         assert!(state.validate_token("secret123").await);
     }

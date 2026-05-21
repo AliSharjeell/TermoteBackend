@@ -4,6 +4,7 @@
 //! PTY spawning, and terminal I/O.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::env;
 
@@ -14,7 +15,33 @@ use tower_http::cors::{CorsLayer, Any};
 use tracing::{info, Level, error};
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
 
-use termote::{create_router, AppState};
+use termote::{create_router, default_shell_program, AppState};
+
+fn arg_value(name: &str) -> Option<String> {
+    let flag = format!("--{}", name);
+    let prefix = format!("{}=", flag);
+    let args: Vec<String> = env::args().collect();
+
+    args.iter()
+        .position(|arg| arg == &flag)
+        .and_then(|idx| args.get(idx + 1).cloned())
+        .or_else(|| {
+            args.iter()
+                .find_map(|arg| arg.strip_prefix(&prefix).map(|value| value.to_string()))
+        })
+}
+
+fn build_launch_url(frontend_url: &str, tunnel_url: &str, auth_token: &str) -> String {
+    let encoded_tunnel = urlencoding::encode(tunnel_url);
+    let encoded_token = urlencoding::encode(auth_token);
+    let path = format!("/dashboard/?tunnel={}&token={}", encoded_tunnel, encoded_token);
+
+    if frontend_url.trim().is_empty() || frontend_url == "/" {
+        path
+    } else {
+        format!("{}{}", frontend_url.trim_end_matches('/'), path)
+    }
+}
 
 /// IPC server for single-instance behavior.
 /// Listens on localhost:9091 for commands like "open_dir:<path>"
@@ -70,7 +97,8 @@ async fn run_ipc_server(state: Arc<AppState>) {
                                 }
                             } else if let Some(path) = line.strip_prefix("open_dir:") {
                                 let path = path.trim();
-                                if let Err(e) = state.spawn_pane_at_dir(path, "powershell.exe").await {
+                                let shell = default_shell_program();
+                                if let Err(e) = state.spawn_pane_at_dir(path, &shell).await {
                                     error!("Failed to spawn pane at {}: {}", path, e);
                                 }
                             }
@@ -131,37 +159,40 @@ async fn main() {
     info!("Auth token configured");
 
     // Configure listen address
-    let port = std::env::var("PORT").map(|p| p.parse().unwrap_or(9090)).unwrap_or(9090);
+    let port = arg_value("port")
+        .or_else(|| std::env::var("PORT").ok())
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(9090);
 
-    // Get frontend URL (where the React app is hosted)
-    let frontend_url = std::env::var("FRONTEND_URL")
-        .unwrap_or_else(|_| "https://termote.vercel.app".to_string());
+    // Optional absolute frontend URL. Empty means same-origin static UI.
+    let frontend_url = arg_value("public-base-url")
+        .or_else(|| std::env::var("PUBLIC_BASE_URL").ok())
+        .or_else(|| std::env::var("FRONTEND_URL").ok())
+        .unwrap_or_default();
 
     // Get tunnel URL (public URL of this server for WebSocket connections)
-    let tunnel_url = std::env::var("TUNNEL_URL")
-        .unwrap_or_else(|_| {
+    let tunnel_url = arg_value("tunnel-url")
+        .or_else(|| std::env::var("TUNNEL_URL").ok())
+        .unwrap_or_else(|| {
             // Default to localhost - user should configure this for production
             info!("TUNNEL_URL not set, defaulting to localhost (configure for production!)");
             format!("ws://127.0.0.1:{}", port)
         });
 
-    info!("Frontend URL: {}", frontend_url);
+    let frontend_dir = arg_value("frontend-dir")
+        .or_else(|| std::env::var("FRONTEND_DIR").ok())
+        .map(PathBuf::from);
+
+    info!("Frontend URL: {}", if frontend_url.is_empty() { "(same-origin)" } else { &frontend_url });
+    if let Some(ref dir) = frontend_dir {
+        info!("Serving frontend from: {}", dir.display());
+    } else {
+        info!("No frontend directory configured; API/WebSocket routes only");
+    }
     info!("Tunnel URL: {}", tunnel_url);
 
     // Parse CLI arguments for cold start initial directory
-    let cold_start_dir: Option<String> = env::args()
-        .skip(1) // Skip program name
-        .collect::<Vec<_>>()
-        .iter()
-        .position(|arg| arg == "--initial-dir")
-        .and_then(|idx| env::args().skip(idx + 1).next())
-        .or_else(|| {
-            // Also check --initial-dir=VALUE format
-            env::args()
-                .skip(1)
-                .find(|arg| arg.starts_with("--initial-dir="))
-                .map(|arg| arg.trim_start_matches("--initial-dir=").to_string())
-        });
+    let cold_start_dir: Option<String> = arg_value("initial-dir");
 
     if let Some(ref dir) = cold_start_dir {
         info!("Cold start with initial directory: {}", dir);
@@ -182,7 +213,7 @@ async fn main() {
     });
 
     // Create router with CORS
-    let app = create_router(state.clone())
+    let app = create_router(state.clone(), frontend_dir.clone())
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -199,9 +230,7 @@ async fn main() {
     info!("Launch (auto-connect): http://{}/launch", addr);
 
     // Build the launch URL
-    let encoded_tunnel = urlencoding::encode(&tunnel_url);
-    let encoded_token = urlencoding::encode(&auth_token);
-    let launch_url = format!("{}/?tunnel={}&token={}", frontend_url, encoded_tunnel, encoded_token);
+    let launch_url = build_launch_url(&frontend_url, &tunnel_url, &auth_token);
 
     // Don't auto-open browser — the termote shim handles opening the browser
     // when connecting to an existing session. Fresh starts show the URL in terminal.
@@ -215,7 +244,8 @@ async fn main() {
     // and auto-spawn the first terminal
     if let Some(ref dir) = state.cold_start_dir {
         info!("Cold start detected, spawning initial terminal at: {}", dir);
-        if let Err(e) = state.spawn_pane_at_dir(dir, "powershell.exe").await {
+        let shell = default_shell_program();
+        if let Err(e) = state.spawn_pane_at_dir(dir, &shell).await {
             error!("Failed to spawn initial pane at {}: {}", dir, e);
         }
     }

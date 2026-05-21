@@ -3,6 +3,7 @@
 //! Handles client connections, authentication, and message routing.
 //! Includes tunnel-check endpoint for Dev Tunnel session establishment.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use futures_util::stream::StreamExt;
 use futures_util::sink::SinkExt;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{info, error, warn};
 
 use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo, DirectoryItem};
@@ -1343,9 +1345,16 @@ async fn handle_client_message(
 
         ClientMessage::KillProcess { pid } => {
             info!("Kill process requested: PID {}", pid);
+            #[cfg(windows)]
             let output = std::process::Command::new("taskkill")
                 .args(["/PID", &pid.to_string(), "/F"])
                 .output();
+
+            #[cfg(not(windows))]
+            let output = std::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .output();
+
             match output {
                 Ok(out) if out.status.success() => {
                     let _ = state.broadcast_tx.send(ServerMessage::ProcessKilled {
@@ -1644,14 +1653,21 @@ async fn handle_client_message(
 }
 
 /// Creates the router with WebSocket and health endpoints.
-pub fn create_router(state: Arc<AppState>) -> Router {
-    Router::new()
+pub fn create_router(state: Arc<AppState>, frontend_dir: Option<PathBuf>) -> Router {
+    let router = Router::new()
         .route("/ws", get(ws_handler))
         .route("/health", get(health_handler))
         .route("/tunnel-check", get(tunnel_check_handler))
         .route("/launch", get(launch_handler))
         .route("/proxy/*target", get(proxy_handler))
-        .with_state(state)
+        .with_state(state);
+
+    if let Some(frontend_dir) = frontend_dir.filter(|dir| dir.exists()) {
+        let index_file = frontend_dir.join("index.html");
+        router.fallback_service(ServeDir::new(frontend_dir).fallback(ServeFile::new(index_file)))
+    } else {
+        router
+    }
 }
 
 /// Health check handler.
@@ -1690,7 +1706,12 @@ pub async fn launch_handler(State(state): State<Arc<AppState>>) -> Response {
     let encoded_tunnel = urlencoding::encode(tunnel_url);
     let encoded_token = urlencoding::encode(token);
 
-    let redirect_url = format!("{}/?tunnel={}&token={}", frontend_url, encoded_tunnel, encoded_token);
+    let path = format!("/dashboard/?tunnel={}&token={}", encoded_tunnel, encoded_token);
+    let redirect_url = if frontend_url.trim().is_empty() || frontend_url == "/" {
+        path
+    } else {
+        format!("{}{}", frontend_url.trim_end_matches('/'), path)
+    };
 
     info!("Launch redirect to: {}", redirect_url);
 
