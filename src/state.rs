@@ -773,7 +773,11 @@ impl AppState {
 
     /// Checks if the given token is valid.
     pub async fn validate_token(&self, token: &str) -> bool {
-        &self.auth_token == token
+        let is_valid = &self.auth_token == token;
+        if !is_valid {
+            tracing::warn!("Token mismatch! Expected: '{}', Received: '{}'", self.auth_token, token);
+        }
+        is_valid
     }
 
     /// Sets the authenticated flag.
