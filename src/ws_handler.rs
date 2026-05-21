@@ -551,123 +551,65 @@ async fn run_git_pull(dir: &str, _pane_id: &str) -> ServerMessage {
     }
 }
 
-/// Finds all git repositories in subdirectories of a path.
-async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
-    use std::collections::HashMap;
-    use std::process::Command;
+fn run_command_with_timeout(
+    program: &str,
+    args: &[&str],
+    command_timeout: Duration,
+) -> Option<std::process::Output> {
+    use std::process::{Command, Stdio};
+    use std::time::Instant;
 
-    // --- OS Process Blocklist ---
-    // These executables are background noise; skip them to reduce clutter.
-    let blocklist: std::collections::HashSet<&str> = [
-        // Windows System Processes
-        "svchost.exe",
-        "System",
-        "System Idle Process",
-        "explorer.exe",
-        "lsass.exe",
-        "spoolsv.exe",
-        "services.exe",
-        "wininit.exe",
-        "csrss.exe",
-        "smss.exe",
-        "dwm.exe",
-        "winlogon.exe",
-        "registry",
-        "Memory Compression",
-        "Secure System",
-        // Browsers (open many background ports)
-        "chrome.exe",
-        "msedge.exe",
-        "firefox.exe",
-        "brave.exe",
-        // Chat & Media Apps
-        "Discord.exe",
-        "Spotify.exe",
-        "slack.exe",
-        "Teams.exe",
-        "zoom.exe",
-        // Office & Productivity
-        "OUTLOOK.EXE",
-        "EXCEL.EXE",
-        "WINWORD.EXE",
-        "OneDrive.exe",
-        // OS Utilities
-        "RuntimeBroker.exe",
-        "SearchHost.exe",
-        "ShellExperienceHost.exe",
-        "TextInputHost.exe",
-        "StartMenuExperienceHost.exe",
-        "WidgetService.exe",
-        "ApplicationFrameHost.exe",
-        // Security
-        "SecurityHealthService.exe",
-        "MsMpEng.exe",
-        "NisSrv.exe",
-        // OneDrive / Cloud
-        "OneDrive.exe",
-        // Other common noise
-        "conhost.exe",
-        "fontdrvhost.exe",
-        "sihost.exe",
-        "taskhostw.exe",
-        "WmiPrvSE.exe",
-        "dllhost.exe",
-        "provtool.exe",
-        "audiodg.exe",
-        "SearchIndexer.exe",
-        "spoolsv.exe",
-        "armsvc.exe",
-        "AdobeUpdateService.exe",
-        "CCXProcess.exe",
-        "Creative Cloud.exe",
-        "RadeonSoftware.exe",
-        "RadeonSettings.exe",
-        "Steam.exe",
-        "Steam Service.exe",
-        "EpicGamesLauncher.exe",
-        "Origin.exe",
-        "UbisoftGameLauncher.exe",
-    ].iter().cloned().collect();
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            warn!("Failed to start {}: {}", program, error);
+            error
+        })
+        .ok()?;
 
-    // --- Build PID -> Process Name map via tasklist ---
-    let mut pid_to_name: HashMap<u32, String> = HashMap::new();
-    if let Ok(task_output) = Command::new("tasklist")
-        .args(["/FI", "STATUS eq Running", "/FO", "CSV", "/NH"])
-        .output()
-    {
-        if task_output.status.success() {
-            for line in String::from_utf8_lossy(&task_output.stdout).lines() {
-                // CSV format: "name","pid","session","sessionnum","memory"
-                if let Some(name) = line.strip_prefix('"') {
-                    let parts: Vec<&str> = name.split('"').collect();
-                    if parts.len() >= 2 {
-                        let name = parts[0].trim();
-                        if let Some(pid_str) = parts.get(1) {
-                            if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                                pid_to_name.insert(pid, name.to_string());
-                            }
-                        }
-                    }
-                }
+    let started_at = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) if started_at.elapsed() >= command_timeout => {
+                warn!("{} timed out after {:?}", program, command_timeout);
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+            Err(error) => {
+                warn!("Failed while waiting for {}: {}", program, error);
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
             }
         }
     }
+}
 
-    // --- Use sysinfo for more reliable process name lookup ---
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_all();
-
+/// Finds listening development ports with process IDs.
+fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
     let mut processes = vec![];
     let mut seen: std::collections::HashSet<u16> = std::collections::HashSet::new();
 
-    // --- Use netstat to find listening ports with process IDs ---
-    let output = Command::new("netstat")
-        .args(["-ano", "-p", "TCP"])
-        .output()
-        .ok();
+    // Use netstat to find listening ports with process IDs. On some Windows
+    // machines this can hang, so keep it behind an explicit child timeout.
+    let output = run_command_with_timeout(
+        "netstat",
+        &["-ano", "-p", "TCP"],
+        Duration::from_secs(3),
+    );
 
-    let Some(output) = output else { return processes };
-    if !output.status.success() { return processes }
+    let Some(output) = output else {
+        return processes;
+    };
+    if !output.status.success() {
+        return processes;
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -695,23 +637,11 @@ async fn run_get_port_processes() -> Vec<crate::messages::PortProcess> {
                             continue;
                         }
 
-                        // --- Determine process name ---
-                        // Prefer sysinfo (more reliable), fall back to tasklist
-                        let process_name = if let Some(proc) = sys.process((pid as usize).into()) {
-                            proc.name().to_string_lossy().into_owned()
-                        } else {
-                            pid_to_name.get(&pid)
-                                .cloned()
-                                .unwrap_or_else(|| format!("PID:{}", pid))
-                        };
-
-                        // Skip blocklisted processes
-                        if blocklist.contains(process_name.as_str()) {
-                            continue;
-                        }
-
                         // --- Determine pretty name via PORT_MAP ---
                         let pretty_name = crate::messages::get_pretty_port_name(port);
+                        let process_name = pretty_name
+                            .clone()
+                            .unwrap_or_else(|| format!("PID:{}", pid));
 
                         processes.push(crate::messages::PortProcess {
                             port,
@@ -1339,8 +1269,28 @@ async fn handle_client_message(
 
         ClientMessage::GetPortProcesses => {
             info!("Port processes requested");
-            let processes = run_get_port_processes().await;
-            let _ = state.broadcast_tx.send(ServerMessage::PortProcesses { processes });
+            let broadcast_tx = state.broadcast_tx.clone();
+            tokio::spawn(async move {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    tokio::task::spawn_blocking(run_get_port_processes),
+                ).await;
+
+                let processes = match result {
+                    Ok(Ok(processes)) => processes,
+                    Ok(Err(error)) => {
+                        error!("Port process scan task failed: {}", error);
+                        Vec::new()
+                    }
+                    Err(_) => {
+                        warn!("Port process scan timed out");
+                        Vec::new()
+                    }
+                };
+
+                info!("Port process scan completed: {} entries", processes.len());
+                let _ = broadcast_tx.send(ServerMessage::PortProcesses { processes });
+            });
         }
 
         ClientMessage::KillProcess { pid } => {
