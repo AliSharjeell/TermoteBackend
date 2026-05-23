@@ -270,7 +270,7 @@ impl PtyManager {
                 pixel_width: 0,
                 pixel_height: 0,
             })?;
-            tracing::info!("Resize pane {} to {}x{}", pane_id, cols, rows);
+            tracing::info!("[PTY RESIZE] pane={} cols={} rows={}", pane_id, cols, rows);
         } else {
             return Err(format!("No master PTY found for pane {}", pane_id).into());
         }

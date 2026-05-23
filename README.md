@@ -1,68 +1,57 @@
+# Termote - Lightweight Agent Development Environment
 
 <div align="center">
 
 ```
 ███████╗███████╗██████╗ ███╗   ███╗██████╗ ████████╗███████╗
 ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝
- ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗
- ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝
+   ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║   ██║   █████╗
+   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║   ██║   ██╔══╝
    ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗
    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝
 ```
-**Your local CLI, anywhere.**
 
-Turn any browser into a full-powered, multi-pane terminal for your PC — instantly. No SSH, no tmux, no setup.
+**A lightweight ADE (Agent Development Environment) for power users.**
 
-**Install the desktop app:** use the Tauri installer from [TermoteUI](https://github.com/AliSharjeell/TermoteUI). This backend repo is bundled into that desktop GUI as a sidecar.
+Turn any browser into a full-powered, multi-pane terminal workspace — with built-in tools, AI agent integration, and one-click remote access from anywhere.
 
 </div>
 
 ---
-Termote wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your machine's command line from any device with a browser. The supported end-user install is the Tauri desktop GUI from TermoteUI, which runs this Rust backend locally and forwards the same local GUI through Microsoft Dev Tunnels for mobile access.
 
-## Core Features
+## What is Termote?
+
+**Termote** is a persistent multi-pane terminal workspace that supercharges your CLI workflow. Built with Rust for blazing performance, it wraps your terminal sessions in encrypted WebSockets over HTTPS, punching through NATs and firewalls so you can access your machine from any device, anywhere.
+
+### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **Anywhere, Any Network** | Ditch the VPNs and port forwarding. Termote securely punches through NATs and firewalls, giving you instant access to your machine whether you are on the same Wi-Fi or halfway across the world. |
-| **Multi-Pane Terminal (Like tmux, but visual)** | Don't limit yourself to one screen. Split, stack, and manage multiple terminal panes simultaneously right in your browser. Run your backend, watch your frontend build, and monitor server logs all in one view. |
-| **Smart Single-Instance** | Already have Termote running? Typing `termote` in a new local folder or clicking "Open with Termote" won't spawn a redundant server. It intelligently connects to your active session and opens a new pane for that directory. |
-| **Desktop GUI + Mobile Browser** | Install the Tauri GUI on your PC, then use the Mobile Access button to forward the same local GUI to your phone through Dev Tunnels. |
-| **Runs directly on your PC (no cloud, no lag)** | You get the full unchained power of your host machine's CLI. Whatever your host PC can do, you can do remotely with near-zero latency. |
-| **Drag-and-Drop File Transfer** | Drag files directly into any terminal pane to upload them to that pane's working directory. |
-| **Security & Device Management** | View connected devices, kick sessions, and ban IP addresses directly from the UI. |
-| **Pane Groups** | Color-code and organize terminal panes into groups for easier management. |
+| **AI Agent Ready** | One-click launch for Claude Code, Gemini CLI, AutoGPT, and any CLI-based AI agent. Your agents run on your beefy home rig, accessible from anywhere. |
+| **Multi-Pane Workspace** | Split, stack, and organize terminal panes like tmux — but with a beautiful visual UI. Color-code groups, drag-and-drop files, and manage everything from your phone. |
+| **Anywhere Access** | Ditch the VPNs. Termote securely punches through NATs and firewalls via encrypted WebSockets over HTTPS (port 443). Work from your phone at the coffee shop, tablet on the couch, or laptop at the airport. |
+| **Zero-Cloud Latency** | Runs locally on your machine. No cloud servers, no lag. Whatever your host PC can do, you can do remotely with near-zero latency. |
+| **Smart Single-Instance** | Already running? New terminals intelligently connect to your active session and open in the right directory. No redundant servers. |
+| **Security Built-In** | View connected devices, kick sessions, and ban IPs. End-to-end encrypted, token-gated access. |
 
 ---
 
-## Real-World Use Cases
+## Quick Install
 
-### The Mobile AI Agent Commander
-You are out grabbing coffee, but you want your beefy home rig to start working on a task. Pull out your phone, open Termote, and spin up AutoGPT, a local LLM, or a CLI-based AI agent. You can monitor its thought process and give it real-time corrections right from your mobile browser.
+### One-Click Desktop Install (Recommended)
 
-### The "Dinner Emergency" Server Fix
-You are out with friends and get an alert that your local dev server, home lab, or Discord bot just crashed. Instead of rushing home, you quietly open Termote on your phone, run a quick `docker restart` or `pm2 reload`, and go right back to eating.
+Download the Termote installer from the **[TermoteUI Releases Page](https://github.com/AliSharjeell/TermoteUI/releases)** and run it. The installer includes everything:
 
-### Monitoring Heavy-Duty Jobs from the Couch
-You just kicked off a massive compilation, a 4-hour web scraping script, or a machine learning training epoch on your desktop PC. Instead of sitting at your desk staring at a progress bar, grab your iPad, head to the couch, and keep a live Termote pane open next to your Netflix stream.
+- **Termote desktop GUI** (Tauri + Next.js)
+- **Bundled Rust backend** (PTy manager, WebSocket server, Dev Tunnel integration)
+- **All prerequisites** (WebView2, Dev Tunnels CLI, etc.)
+- **Start Menu shortcut** and optional context menu integration
 
-### Bypassing Locked-Down Networks
-You are on a restrictive school or corporate Wi-Fi network that aggressively blocks SSH (Port 22). Because Termote wraps your terminal stream in standard, encrypted WebSockets over HTTPS (Port 443), it slices right through aggressive firewalls, letting you reach your home machine undetected.
+Just download, run, and you're ready. One-click install, anywhere access.
 
----
+### Build From Source
 
-## 60-Second Setup
-
-1. Install or build the TermoteUI Tauri desktop app
-2. Launch Termote on your PC
-3. Click Mobile Access
-4. Scan the QR code or copy the link for your phone
-
-## Installation
-
-### Recommended: Desktop App
-
-Termote is no longer CLI-first. Install the desktop GUI from the TermoteUI releases page, or build it from source with both repos side by side:
+Clone both repos side by side:
 
 ```powershell
 mkdir C:\AppsNew\TermoteFull
@@ -74,94 +63,113 @@ npm install
 npm run tauri:build
 ```
 
-The Tauri build exports the GUI, builds/prepares this Rust backend as a sidecar, and writes installer artifacts under:
-
-```text
-TermoteUI\src-tauri\target\release\bundle
-```
-
-Run the installed app. It starts this backend on `127.0.0.1:9090` and serves the bundled GUI from the same port. The Mobile Access button starts Microsoft Dev Tunnels for that port, so your phone opens the same local app through the tunnel.
-
-### Legacy Backend-Only Install
-
-This PowerShell installer is kept for backend/CLI development and compatibility. New users should prefer the desktop installer above.
-
-```powershell
-powershell -c "irm https://raw.githubusercontent.com/AliSharjeell/Termote/master/install.ps1 | iex"
-```
-> **Note:** The desktop app can use anonymous Dev Tunnels from the GUI. The legacy CLI installer may still ask you to authenticate with Microsoft Dev Tunnels.
-
-**Troubleshooting:** If the `termote` command is not found immediately after installation, restart your terminal or run this to refresh your environment variables:
-
-```powershell
-$env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-```
-
-## Connecting Devices (QR Code & Sharing)
-
-Termote makes it easy to jump from your PC to your phone or another laptop right from the desktop GUI.
-
-When you open your Termote dashboard, look for the connection tools built directly into the UI:
-
-* **Mobile Access:** Click the Mobile Access button to start a Dev Tunnel for the local GUI/backend port.
-* **QR Code for Mobile:** Open the profile panel and scan the QR code with your phone's camera.
-* **Quick Share Link:** Copy the generated mobile URL and password from the GUI.
-
-## Legacy CLI Commands
-
-After the backend-only installer, the following commands are available in your terminal:
-
-| Command | Description |
-|---------|-------------|
-| `termote` | Starts the server. If already running, opens the current directory as a new pane in your active session. |
-| `termote-kill` | Safely shuts down all Termote instances and active tunnels. |
-| `termote-link` | Displays your active tunnel URL, password, and shareable link. |
-| `termote-log` | View real-time backend logs in your terminal. |
-| `termote-ban-list` | View all banned IP addresses. |
-| `termote-unban <ip>` | Remove an IP from the ban list. |
-| `termote-update` | Fetch and execute the latest Termote installation script from GitHub. |
-| Right-click in folder → **"Open with Termote"** | Instantly opens a new terminal pane for that specific folder in your existing web UI. |
+Installer artifacts are in `src-tauri\target\release\bundle`.
 
 ---
 
-## Why not SSH?
+## Architecture
 
-- No port forwarding
-- No VPN setup
-- Works on restricted networks (port 443)
-- Browser-based UI (mobile friendly)
-- Multi-pane built-in (no tmux needed)
+**Termote** is a two-repo project:
 
-## Security
+| Repo | Role | Tech |
+|------|------|------|
+| **[Termote](https://github.com/AliSharjeell/Termote)** | Backend (this repo) | Rust, axum, portable-pty, tokio |
+| **[TermoteUI](https://github.com/AliSharjeell/TermoteUI)** | Frontend & Desktop App | Next.js 16, React 19, xterm.js, Tauri 2 |
 
-- End-to-end encrypted via HTTPS/WebSockets
-- Termote auth token required for every browser session
-- Dev Tunnels can be anonymous; the Termote token remains the app-level gate
-- No command logging or data storage
-- Runs locally on your machine
+The TermoteUI desktop app bundles the Termote Rust backend as a sidecar. Users install one GUI app; the backend runs locally alongside it.
 
-## Reporting Issues
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Termote Desktop App                    │
+│                    (TermoteUI + Tauri)                    │
+│                                                          │
+│  ┌────────────────────┐        ┌─────────────────────┐  │
+│  │  WebView2 (Next.js)│◄──────►│  Termote Backend    │  │
+│  │  xterm.js + React  │ WS     │  (Rust sidecar)     │  │
+│  └────────────────────┘        └─────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+                           │
+                           │ Dev Tunnel (HTTPS/443)
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│                    Mobile Browser                        │
+│              Same UI, anywhere in the world              │
+└──────────────────────────────────────────────────────────┘
+```
 
-If you spot a bug, have a feature request, or the tunnel suddenly stops working, please open a new **Issue** in the repository. 
+---
 
-When creating an issue, please include as much detail as possible (your OS, error logs, and steps to reproduce) so it can be tracked and fixed quickly.
+## Use Cases
+
+### The Mobile AI Agent Commander
+You're out grabbing coffee, but you want your beefy home rig to start training a model or running an AI agent. Pull out your phone, open Termote, and spin up Claude Code or a local LLM. Monitor its thought process, give real-time corrections, all from your mobile browser.
+
+### The "Dinner Emergency" Fix
+Get an alert that your dev server crashed? Instead of rushing home, open Termote on your phone, run `docker restart` or `pm2 reload`, and go right back to dinner.
+
+### Monitoring Long Jobs from the Couch
+Kicked off a massive compilation, a 4-hour scraping script, or ML training? Grab your tablet, head to the couch, and watch the progress in a live Termote pane next to your Netflix stream.
+
+### Bypassing Restrictive Networks
+On a corporate Wi-Fi that blocks SSH? Termote wraps your terminal in standard HTTPS WebSockets (port 443) and slices right through.
+
+---
+
+## Why Termote?
+
+| SSH | Termote |
+|-----|---------|
+| Requires port forwarding | Works through NATs/firewalls |
+| Needs VPN setup | Zero-config, just HTTPS |
+| Terminal-only | Beautiful multi-pane UI |
+| Not mobile-friendly | Optimized for phone/tablet |
+| Manual session management | Persistent workspace, auto-reconnect |
+
+---
+
+## Technical Highlights
+
+- **Rust PTY Management**: Native PTY handling via `portable-pty` for Windows ConPTY integration
+- **Async WebSocket Server**: axum + tokio for high-performance concurrent connections
+- **xterm.js Terminal Emulator**: Feature-rich terminal with FitAddon auto-sizing
+- **Microsoft Dev Tunnels**: Anonymous tunnel access, QR code sharing, instant mobile connect
+- **Multi-Client Sync**: Broadcast channel architecture for real-time multi-device sync
+- **Scrollback Buffers**: Persistent terminal history across reconnections
+- **Drag-and-Drop Upload**: File transfer directly into terminal working directory
+- **Zustand State Management**: Lightweight, performant global state for React
+
+---
+
+## CLI Commands (Post-Install)
+
+After installing, these commands are available:
+
+| Command | Description |
+|---------|-------------|
+| `termote` | Start server (or open directory in active session) |
+| `termote-kill` | Shutdown all Termote instances |
+| `termote-link` | Display tunnel URL and shareable link |
+| `termote-log` | Stream real-time backend logs |
+| `termote-ban-list` | View banned IPs |
+| `termote-unban <ip>` | Remove IP from ban list |
+| Right-click folder → "Open with Termote" | Open new pane in that directory |
 
 ---
 
 ## Contributing
 
-Contributions are highly encouraged! To keep development organized and prevent multiple people from doing the exact same work, please follow this strict workflow:
+Contributions welcome! Please reach out before starting major work:
 
-1. **Reach Out First:** If you want to build a feature or fix a bug, either comment on the specific Issue or email me directly at **alisharjeelofficial@gmail.com**.
-2. **Get Assigned:** Wait for me to officially assign the task to you. 
-3. **Open a Pull Request:** Once your code is ready and tested, open a standard PR on GitHub.
-4. **Send a Demo Video:** To speed up the review process, you **must** email me a short screen recording demonstrating your changes working on your local machine. PRs without a demo video will not be merged.
+1. **Open an Issue** or email `alisharjeelofficial@gmail.com`
+2. **Get assigned** before writing code
+3. **Open a PR** with tests
+4. **Send a demo video** to speed up review
 
-For major architectural changes, please make sure we have thoroughly discussed your approach via email or in the issue thread before you start writing code!
+---
 
-## ⭐ Show Your Support
+## Show Your Support
 
-If Termote saved you from rushing home to fix a broken server, or made your mobile command-line life easier — give it a star!
+If Termote made your mobile command-line life easier, give it a star!
 
 [![Star](https://img.shields.io/github/stars/AliSharjeell/Termote?style=social)](https://github.com/AliSharjeell/Termote)
 
@@ -169,4 +177,4 @@ If Termote saved you from rushing home to fix a broken server, or made your mobi
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
