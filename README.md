@@ -6,6 +6,8 @@
 
 **Termote is a lightweight ADE (Agent Development Environment) that boosts your productivity with a persistent multi-pane workspace, built-in tools, and one-click remote access so you can keep working from your phone, anywhere.**
 
+![Termote Cover](public/maincover.png)
+
 </div>
 
 ---
@@ -30,6 +32,22 @@ This is the **Termote backend** — a Rust application that:
 - Integrates with Microsoft Dev Tunnels for remote access
 
 It's bundled with the [TermoteUI](https://github.com/AliSharjeell/TermoteUI) desktop app. You don't need to install this directly — **download the installer from [TermoteUI Releases](https://github.com/AliSharjeell/TermoteUI/releases)**.
+
+![Desktop Interface](public/mainss1.png)
+
+---
+
+## Mobile Access
+
+Scan the QR code to connect from your phone or tablet — no VPN needed.
+
+![Mobile QR Access](public/mobileqr.png)
+
+---
+
+![Mobile Interface](public/phone1new.png)
+
+![Mobile Tabs View](public/phone2new.png)
 
 ---
 
