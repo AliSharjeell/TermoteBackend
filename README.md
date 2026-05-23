@@ -4,7 +4,7 @@
 
 <div align="center">
 
-![Termote](https://img.shields.io/github/stars/AliSharjeell/Termote?style=social)
+![Termote](https://img.shields.io/github/stars/AliSharjeell/TermoteBackend?style=social)
 
 **Termote is a lightweight ADE (Agent Development Environment) that boosts your productivity with a persistent multi-pane workspace, built-in tools, and one-click remote access so you can keep working from your phone, anywhere.**
 
@@ -16,7 +16,7 @@
 
 **This is the backend only.** For the full app with GUI, get the installer:
 
-👉 **[Download from TermoteUI Releases](https://github.com/AliSharjeell/TermoteUI/releases)**
+👉 **[Download from Termote Releases](https://github.com/AliSharjeell/Termote/releases)**
 
 The installer packages everything together — one download, one install.
 
@@ -31,7 +31,7 @@ This is the **Termote backend** — a Rust application that:
 - Handles multi-client connections and state sync
 - Integrates with Microsoft Dev Tunnels for remote access
 
-It's bundled with the [TermoteUI](https://github.com/AliSharjeell/TermoteUI) desktop app. You don't need to install this directly — **download the installer from [TermoteUI Releases](https://github.com/AliSharjeell/TermoteUI/releases)**.
+It's bundled with the [Termote](https://github.com/AliSharjeell/Termote) desktop app. You don't need to install this directly — **download the installer from [Termote Releases](https://github.com/AliSharjeell/Termote/releases)**.
 
 ![Desktop Interface](public/mainss1.png)
 
