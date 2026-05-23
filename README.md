@@ -1,8 +1,8 @@
+![Termote Cover](public/maincover.png)
+
 # Termote - Terminal Backend
 
 <div align="center">
-
-![Termote Cover](public/maincover.png)
 
 ![Termote](https://img.shields.io/github/stars/AliSharjeell/Termote?style=social)
 
