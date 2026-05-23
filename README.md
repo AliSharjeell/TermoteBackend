@@ -10,6 +10,16 @@
 
 ---
 
+## Install
+
+**This is the backend only.** For the full app with GUI, get the installer:
+
+👉 **[Download from TermoteUI Releases](https://github.com/AliSharjeell/TermoteUI/releases)**
+
+The installer packages everything together — one download, one install.
+
+---
+
 ## What is This?
 
 This is the **Termote backend** — a Rust application that:
