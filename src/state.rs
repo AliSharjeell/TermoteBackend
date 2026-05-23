@@ -2,7 +2,7 @@
 //!
 //! Manages panes, authentication state, and WebSocket sessions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -235,6 +235,8 @@ pub struct Pane {
     pub(crate) image_data: Option<String>,
     /// URL for browser panes.
     pub(crate) url: Option<String>,
+    /// Whether the pane is pinned in the UI.
+    pub pinned: bool,
 }
 
 impl Pane {
@@ -256,6 +258,7 @@ impl Pane {
             whiteboard_data: None,
             image_data: None,
             url: None,
+            pinned: false,
         }
     }
 
@@ -264,7 +267,7 @@ impl Pane {
         Self {
             id: Uuid::new_v4().to_string(),
             pid: 0,
-            shell: String::new(),
+            shell: pane_type.to_string(),
             name: name.to_string(),
             cols: 80,
             rows: 24,
@@ -276,6 +279,7 @@ impl Pane {
             whiteboard_data: None,
             image_data: None,
             url: None,
+            pinned: false,
         }
     }
 
@@ -287,6 +291,7 @@ impl Pane {
     /// Sets the pane type.
     pub fn set_pane_type(&mut self, pane_type: &str) {
         self.pane_type = pane_type.to_string();
+        self.shell = pane_type.to_string();
     }
 
     /// Appends data to the scrollback buffer, capping at MAX_BUFFER_SIZE bytes.
@@ -365,6 +370,50 @@ struct SessionState {
     active_panes: Vec<String>,
     floating_panes: Vec<String>,
     groups: Vec<PaneGroupInfo>,
+}
+
+fn remap_saved_pane_ids(
+    pane_ids: &[String],
+    pane_id_map: &HashMap<String, String>,
+    existing_pane_ids: &HashSet<String>,
+) -> Vec<String> {
+    let mut remapped_ids = Vec::new();
+    let mut seen = HashSet::new();
+
+    for pane_id in pane_ids {
+        let remapped_id = pane_id_map
+            .get(pane_id)
+            .cloned()
+            .unwrap_or_else(|| pane_id.clone());
+
+        if existing_pane_ids.contains(&remapped_id) && seen.insert(remapped_id.clone()) {
+            remapped_ids.push(remapped_id);
+        }
+    }
+
+    remapped_ids
+}
+
+fn is_non_terminal_pane_type(pane_type: &str) -> bool {
+    matches!(pane_type, "note" | "image" | "whiteboard" | "browser")
+}
+
+fn pane_type_from_info(pane_info: &PaneInfo) -> String {
+    pane_info
+        .pane_type
+        .as_deref()
+        .filter(|pane_type| !pane_type.is_empty())
+        .or_else(|| {
+            if is_non_terminal_pane_type(&pane_info.shell) {
+                Some(pane_info.shell.as_str())
+            } else if pane_info.url.is_some() {
+                Some("browser")
+            } else {
+                None
+            }
+        })
+        .unwrap_or("terminal")
+        .to_string()
 }
 
 impl AppState {
@@ -500,8 +549,32 @@ impl AppState {
             });
         }
 
+        let mut pane_id_map = HashMap::new();
+        let mut restored_pane_order = Vec::new();
+
         // Respawn all panes at their saved directories
         for pane_info in loaded_panes_info {
+            let pane_type = pane_type_from_info(&pane_info);
+            if is_non_terminal_pane_type(&pane_type) {
+                let pane_id = pane_info.id.clone();
+                let mut pane = Pane::new_non_terminal(&pane_type, &pane_info.name);
+                pane.id = pane_id.clone();
+                pane.cols = pane_info.cols;
+                pane.rows = pane_info.rows;
+                pane.group_id = pane_info.group_id.clone();
+                pane.note_content = pane_info.note_content.clone();
+                pane.whiteboard_data = pane_info.whiteboard_data.clone();
+                pane.image_data = pane_info.image_data.clone();
+                pane.url = pane_info.url.clone();
+                pane.pinned = pane_info.pinned;
+
+                state.panes.write().await.insert(pane_id.clone(), pane);
+                pane_id_map.insert(pane_id.clone(), pane_id.clone());
+                restored_pane_order.push(pane_id.clone());
+                info!("Restored non-terminal pane {} ({})", pane_id, pane_type);
+                continue;
+            }
+
             if let Some(ref cwd) = pane_info.cwd {
                 let dir = cwd.clone();
                 let shell = pane_info.shell.clone();
@@ -519,9 +592,12 @@ impl AppState {
                         pane.name = name;
                         pane.group_id = group_id;
                         pane.cwd = Some(dir.clone());
+                        pane.pinned = pane_info.pinned;
 
                         // Add to panes map
                         state.panes.write().await.insert(new_pane_id.clone(), pane);
+                        pane_id_map.insert(pane_id.clone(), new_pane_id.clone());
+                        restored_pane_order.push(new_pane_id.clone());
 
                         // cd to the directory after a short delay
                         let pty_manager = state.pty_manager.clone();
@@ -555,7 +631,10 @@ impl AppState {
                         pane.name = pane_info.name.clone();
                         pane.group_id = pane_info.group_id;
                         pane.cwd = None;
+                        pane.pinned = pane_info.pinned;
                         state.panes.write().await.insert(new_pane_id.clone(), pane);
+                        pane_id_map.insert(pane_info.id.clone(), new_pane_id.clone());
+                        restored_pane_order.push(new_pane_id.clone());
                         info!("Respawned pane {} without specific directory", new_pane_id);
                     }
                     Err(e) => {
@@ -563,6 +642,22 @@ impl AppState {
                     }
                 }
             }
+        }
+
+        if !restored_pane_order.is_empty() {
+            let existing_pane_ids: HashSet<String> = state.panes.read().await.keys().cloned().collect();
+            let saved_active = state.active_panes.read().await.clone();
+            let saved_floating = state.floating_panes.read().await.clone();
+            let mut active = remap_saved_pane_ids(&saved_active, &pane_id_map, &existing_pane_ids);
+            let floating = remap_saved_pane_ids(&saved_floating, &pane_id_map, &existing_pane_ids);
+
+            if active.is_empty() && floating.is_empty() {
+                active = restored_pane_order;
+            }
+
+            *state.active_panes.write().await = active;
+            *state.floating_panes.write().await = floating;
+            state.save_session().await;
         }
 
         state
@@ -589,6 +684,7 @@ impl AppState {
             whiteboard_data: p.whiteboard_data.clone(),
             image_data: p.image_data.clone(),
             url: p.url.clone(),
+            pinned: p.pinned,
         }).collect();
         let groups_info: Vec<PaneGroupInfo> = groups.values().map(|g| PaneGroupInfo::from(g)).collect();
 
@@ -754,6 +850,17 @@ impl AppState {
         let mut panes = self.panes.write().await;
         if let Some(pane) = panes.get_mut(pane_id) {
             pane.name = name.to_string();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Updates a pane's pinned state.
+    pub async fn set_pane_pinned(&self, pane_id: &str, pinned: bool) -> bool {
+        let mut panes = self.panes.write().await;
+        if let Some(pane) = panes.get_mut(pane_id) {
+            pane.pinned = pinned;
             true
         } else {
             false
@@ -1003,6 +1110,35 @@ mod tests {
 
     fn test_config_dir() -> PathBuf {
         std::env::temp_dir().join(format!("termote-test-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn test_remap_saved_pane_ids_preserves_order_and_drops_missing_ids() {
+        let pane_id_map = HashMap::from([
+            ("old-a".to_string(), "new-a".to_string()),
+            ("old-b".to_string(), "new-b".to_string()),
+        ]);
+        let existing_pane_ids = HashSet::from([
+            "new-a".to_string(),
+            "new-b".to_string(),
+            "current-c".to_string(),
+        ]);
+        let pane_ids = vec![
+            "old-b".to_string(),
+            "missing".to_string(),
+            "old-a".to_string(),
+            "old-b".to_string(),
+            "current-c".to_string(),
+        ];
+
+        assert_eq!(
+            remap_saved_pane_ids(&pane_ids, &pane_id_map, &existing_pane_ids),
+            vec![
+                "new-b".to_string(),
+                "new-a".to_string(),
+                "current-c".to_string(),
+            ]
+        );
     }
 
     #[tokio::test]

@@ -3,7 +3,7 @@
 //! Handles client connections, authentication, and message routing.
 //! Includes tunnel-check endpoint for Dev Tunnel session establishment.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,7 +25,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing::{info, error, warn};
 
 use crate::messages::{ClientMessage, ServerMessage, PaneGroupInfo, DeviceInfo, DirectoryItem};
-use crate::state::{AppState, ConnectedDevice, PaneGroup};
+use crate::state::{AppState, ConnectedDevice, Pane, PaneGroup};
 use regex::Regex;
 
 /// Decode base64 string to bytes.
@@ -33,6 +33,25 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(input)
 }
+
+fn base64_encode(input: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(input)
+}
+
+fn image_mime_type(path: &Path) -> Option<&'static str> {
+    match path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()) {
+        Some(ext) if ext == "jpg" || ext == "jpeg" => Some("image/jpeg"),
+        Some(ext) if ext == "png" => Some("image/png"),
+        Some(ext) if ext == "gif" => Some("image/gif"),
+        Some(ext) if ext == "webp" => Some("image/webp"),
+        Some(ext) if ext == "bmp" => Some("image/bmp"),
+        Some(ext) if ext == "svg" => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+const MAX_IMAGE_READ_BYTES: u64 = 25 * 1024 * 1024;
 
 /// Maximum time to wait for authentication after connection.
 const AUTH_TIMEOUT_SECS: u64 = 5;
@@ -903,7 +922,7 @@ async fn run_source_control_state(path: &str) -> ServerMessage {
 async fn handle_client_message(
     msg: ClientMessage,
     state: &AppState,
-    _tx: &mpsc::Sender<ServerMessage>,
+    tx: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match msg {
         ClientMessage::Spawn { shell } => {
@@ -966,6 +985,68 @@ async fn handle_client_message(
                     }
                 }
             }
+        }
+
+        ClientMessage::CreatePane {
+            pane_id,
+            pane_type,
+            name,
+            url,
+            note_content,
+            whiteboard_data,
+            image_data,
+        } => {
+            let pane_type = pane_type.trim().to_ascii_lowercase();
+            if !matches!(pane_type.as_str(), "note" | "image" | "whiteboard" | "browser") {
+                warn!("Rejected unsupported pane type: {}", pane_type);
+                let _ = state.broadcast_tx.send(ServerMessage::Error {
+                    message: format!("Unsupported pane type: {}", pane_type),
+                });
+                return Ok(());
+            }
+
+            if pane_type == "browser" && url.as_deref().unwrap_or("").trim().is_empty() {
+                warn!("Rejected browser pane without URL");
+                let _ = state.broadcast_tx.send(ServerMessage::Error {
+                    message: "Browser pane requires a URL".to_string(),
+                });
+                return Ok(());
+            }
+
+            let pane_name = name
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| match pane_type.as_str() {
+                    "note" => "Untitled Note".to_string(),
+                    "image" => "Image Viewer".to_string(),
+                    "whiteboard" => "Whiteboard".to_string(),
+                    "browser" => url.clone().unwrap_or_else(|| "Browser".to_string()),
+                    _ => "Pane".to_string(),
+                });
+
+            let mut pane = Pane::new_non_terminal(&pane_type, &pane_name);
+            if let Some(id) = pane_id.filter(|value| !value.trim().is_empty()) {
+                pane.id = id;
+            }
+
+            let pane_id = pane.id.clone();
+            if state.get_pane(&pane_id).await.is_some() {
+                state
+                    .update_pane_content(&pane_id, note_content, whiteboard_data, image_data)
+                    .await;
+                broadcast_state_update(state).await;
+                state.save_session().await;
+                return Ok(());
+            }
+
+            pane.url = if pane_type == "browser" { url } else { None };
+            pane.note_content = note_content;
+            pane.whiteboard_data = whiteboard_data;
+            pane.image_data = image_data;
+
+            state.add_pane(pane).await;
+            broadcast_state_update(state).await;
+            state.save_session().await;
+            info!("Created shared {} pane {}", pane_type, pane_id);
         }
 
         ClientMessage::RequestDirectoryPicker { shell } => {
@@ -1096,6 +1177,44 @@ async fn handle_client_message(
             });
         }
 
+        ClientMessage::ReadFile { pane_id, absolute_path } => {
+            info!("Read image file requested: {}", absolute_path);
+            let path = Path::new(&absolute_path);
+            let mime_type = image_mime_type(path);
+
+            let result = async {
+                let mime_type = mime_type.ok_or_else(|| "Unsupported image type".to_string())?;
+                let metadata = tokio::fs::metadata(path)
+                    .await
+                    .map_err(|e| format!("Failed to read image metadata: {}", e))?;
+                if !metadata.is_file() {
+                    return Err("Path is not a file".to_string());
+                }
+                if metadata.len() > MAX_IMAGE_READ_BYTES {
+                    return Err("Image is too large to open".to_string());
+                }
+
+                let bytes = tokio::fs::read(path)
+                    .await
+                    .map_err(|e| format!("Failed to read image: {}", e))?;
+                Ok::<String, String>(format!("data:{};base64,{}", mime_type, base64_encode(&bytes)))
+            }
+            .await;
+
+            let (success, data, error) = match result {
+                Ok(data) => (true, Some(data), None),
+                Err(error) => (false, None, Some(error)),
+            };
+
+            let _ = tx.send(ServerMessage::FileReadResult {
+                pane_id,
+                success,
+                absolute_path,
+                data,
+                error,
+            }).await;
+        }
+
         ClientMessage::Input { pane_id, data } => {
             info!("Backend received input for pane: {}", pane_id);
             if let Err(e) = state.pty_manager.write_input(&pane_id, &data) {
@@ -1120,10 +1239,9 @@ async fn handle_client_message(
                     error!("Failed to resize pane {}: {}", pane_id, e);
                 }
 
-                // Broadcast state update to all clients
-                broadcast_state_update(state).await;
-            // Persist session state
-            state.save_session().await;
+                // Resize is client-local display state. Broadcasting it makes clients with
+                // different viewport sizes bounce each other and flicker.
+                state.save_session().await;
             }
         }
 
@@ -1174,6 +1292,14 @@ async fn handle_client_message(
             state.save_session().await;
         }
 
+        ClientMessage::TogglePin { pane_id, pinned } => {
+            info!("Set pane {} pinned state to {}", pane_id, pinned);
+            if state.set_pane_pinned(&pane_id, pinned).await {
+                broadcast_state_update(state).await;
+                state.save_session().await;
+            }
+        }
+
         ClientMessage::Refocus { pane_id, cols, rows } => {
             // Force resize without circuit breaker - this client takes priority
             info!("Refocus pane {} to {}x{} (forced)", pane_id, cols, rows);
@@ -1182,9 +1308,6 @@ async fn handle_client_message(
                 error!("Failed to resize pane {}: {}", pane_id, e);
             }
 
-            // Broadcast to ALL clients (including sender) so everyone updates
-            broadcast_state_update(state).await;
-            // Persist session state
             state.save_session().await;
         }
 
@@ -1723,9 +1846,24 @@ pub async fn proxy_handler(
                         (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
                     ];
 
-                    // Forward cache headers and other safe headers from upstream
+                    // Forward cache headers and other safe end-to-end headers from upstream.
+                    // Hop-by-hop framing headers are specific to the upstream connection and
+                    // can make hyper close the proxied response before sending a status line.
                     for (name, value) in upstream_headers.iter() {
                         let name_lower = name.as_str().to_lowercase();
+                        if matches!(
+                            name_lower.as_str(),
+                            "connection"
+                                | "keep-alive"
+                                | "proxy-authenticate"
+                                | "proxy-authorization"
+                                | "te"
+                                | "trailer"
+                                | "transfer-encoding"
+                                | "upgrade"
+                        ) {
+                            continue;
+                        }
                         // Skip security headers that would block iframe embedding
                         if name_lower == "x-frame-options"
                             || name_lower == "content-security-policy"
@@ -1733,8 +1871,9 @@ pub async fn proxy_handler(
                         {
                             continue;
                         }
-                        // Skip content-length since we may have rewritten the body
-                        if name_lower == "content-length" && is_html {
+                        // Skip content-length since reqwest has already buffered the body and
+                        // HTML may be rewritten before it is sent back to the browser.
+                        if name_lower == "content-length" {
                             continue;
                         }
                         if let Ok(v) = value.to_str() {

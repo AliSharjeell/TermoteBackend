@@ -25,6 +25,18 @@ pub enum ClientMessage {
     #[serde(rename = "spawn_browser")]
     SpawnBrowser { url: String },
 
+    /// Create a non-terminal pane that should be shared across clients.
+    #[serde(rename = "create_pane")]
+    CreatePane {
+        pane_id: Option<String>,
+        pane_type: String,
+        name: Option<String>,
+        url: Option<String>,
+        note_content: Option<String>,
+        whiteboard_data: Option<String>,
+        image_data: Option<String>,
+    },
+
     /// Send input data to a specific pane.
     #[serde(rename = "input")]
     Input { pane_id: String, data: String },
@@ -53,6 +65,10 @@ pub enum ClientMessage {
     /// Rename a pane.
     #[serde(rename = "rename")]
     Rename { pane_id: String, name: String },
+
+    /// Persist a pane's pinned state.
+    #[serde(rename = "toggle_pin")]
+    TogglePin { pane_id: String, pinned: bool },
 
     /// Ping/pong heartbeat (no-op, just keeps connection alive).
     #[serde(rename = "ping")]
@@ -99,6 +115,13 @@ pub enum ClientMessage {
     /// Upload a file to a pane's current working directory.
     #[serde(rename = "upload_file")]
     UploadFile { pane_id: String, file_name: String, data: String },
+
+    /// Read an image file for the image pane picker.
+    #[serde(rename = "read_file")]
+    ReadFile {
+        pane_id: Option<String>,
+        absolute_path: String,
+    },
 
     /// Get git status for a pane's directory.
     #[serde(rename = "get_git_status")]
@@ -220,6 +243,16 @@ pub enum ServerMessage {
     /// A file was successfully uploaded to a pane's directory.
     #[serde(rename = "file_uploaded")]
     FileUploaded { pane_id: String, file_name: String },
+
+    /// Image file read result for the image pane picker.
+    #[serde(rename = "file_read_result")]
+    FileReadResult {
+        pane_id: Option<String>,
+        success: bool,
+        absolute_path: String,
+        data: Option<String>,
+        error: Option<String>,
+    },
 
     /// Git status response for a directory.
     #[serde(rename = "git_status")]
@@ -391,6 +424,9 @@ pub struct PaneInfo {
     /// URL for browser panes.
     #[serde(default)]
     pub url: Option<String>,
+    /// Whether the pane is pinned in the UI.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 impl From<&Pane> for PaneInfo {
@@ -409,6 +445,7 @@ impl From<&Pane> for PaneInfo {
             whiteboard_data: pane.whiteboard_data.clone(),
             image_data: pane.image_data.clone(),
             url: pane.url.clone(),
+            pinned: pane.pinned,
         }
     }
 }
