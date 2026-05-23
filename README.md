@@ -19,7 +19,7 @@ This is the **Termote backend** — a Rust application that:
 - Handles multi-client connections and state sync
 - Integrates with Microsoft Dev Tunnels for remote access
 
-It's bundled with the [TermoteUI](https://github.com/AliSharjeell/TermoteUI) desktop app. You don't need to install this directly.
+It's bundled with the [TermoteUI](https://github.com/AliSharjeell/TermoteUI) desktop app. You don't need to install this directly — **download the installer from [TermoteUI Releases](https://github.com/AliSharjeell/TermoteUI/releases)**.
 
 ---
 
