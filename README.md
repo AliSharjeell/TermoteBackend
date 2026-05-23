@@ -6,17 +6,17 @@
 
 ![Termote](https://img.shields.io/github/stars/AliSharjeell/TermoteBackend?style=social)
 
-**Termote is a lightweight ADE (Agent Development Environment) that boosts your productivity with a persistent multi-pane workspace, built-in tools, and one-click remote access so you can keep working from your phone, anywhere.**
+**Termote is a Rust-based lightweight Agentic Development Environment (ADE) that boosts your productivity with a persistent multi-pane workspace, built-in tools, and one-click remote access so you can keep working from your phone, anywhere.**
 
 </div>
 
 ---
 
-## Install
+## Quick Install
 
-**This is the backend only.** For the full app with GUI, get the installer:
+**This is the backend only.** For the full app with GUI, download the installer:
 
-👉 **[Download from Termote Releases](https://github.com/AliSharjeell/Termote/releases)**
+👉 **[Termote Releases](https://github.com/AliSharjeell/Termote/releases)**
 
 The installer packages everything together — one download, one install.
 
@@ -24,14 +24,14 @@ The installer packages everything together — one download, one install.
 
 ## What is This?
 
-This is the **Termote backend** — a Rust application that:
+The **Termote backend** is a Rust server that:
 
-- Manages PTY (pseudo-terminal) processes
+- Manages terminal (PTY) processes
 - Serves terminal data over WebSocket
 - Handles multi-client connections and state sync
 - Integrates with Microsoft Dev Tunnels for remote access
 
-It's bundled with the [Termote](https://github.com/AliSharjeell/Termote) desktop app. You don't need to install this directly — **download the installer from [Termote Releases](https://github.com/AliSharjeell/Termote/releases)**.
+It's bundled with the desktop app. **Download from [Termote Releases](https://github.com/AliSharjeell/Termote/releases)** instead of installing this directly.
 
 ![Desktop Interface](public/mainss1.png)
 
@@ -97,9 +97,9 @@ cargo build --release
 # target/release/termote-backend
 ```
 
-Or build via TermoteUI:
+Or build via Termote:
 ```bash
-cd ../TermoteUI
+cd ../Termote
 npm run tauri:build
 ```
 
