@@ -59,6 +59,9 @@ sysinfo = "0.31"
 # Regex for rewriting relative URLs in proxy responses
 regex = "1"
 
+# URL parsing for proxy validation
+url = "2"
+
 [profile.release]
 opt-level = 3
 lto = true

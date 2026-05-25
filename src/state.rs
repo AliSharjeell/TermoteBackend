@@ -361,6 +361,8 @@ pub struct AppState {
     session_path: PathBuf,
     /// Last write timestamps per pane for debounce flush
     last_write_time: Arc<RwLock<HashMap<String, u64>>>,
+    /// Browser preview sessions: pane_id -> target origin URL
+    pub preview_sessions: Arc<RwLock<HashMap<String, String>>>,
 }
 
 /// Session state for persistence (simplified - no PTY state)
@@ -518,6 +520,7 @@ impl AppState {
             security: Arc::new(RwLock::new(SecurityState::new(config_dir))),
             session_path,
             last_write_time: Arc::new(RwLock::new(HashMap::new())),
+            preview_sessions: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Spawn debounce flush background task
