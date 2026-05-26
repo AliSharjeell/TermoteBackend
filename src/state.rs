@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn, debug};
 use uuid::Uuid;
 
-use crate::messages::{PaneInfo, PaneGroupInfo};
+use crate::messages::{NotificationEventInfo, NotificationSnapshot, PaneInfo, PaneGroupInfo};
 use crate::pty_manager::{resolve_shell_program, PtyManager};
 
 /// Represents a connected device/client session.
@@ -363,6 +363,10 @@ pub struct AppState {
     last_write_time: Arc<RwLock<HashMap<String, u64>>>,
     /// Browser preview sessions: pane_id -> target origin URL
     pub preview_sessions: Arc<RwLock<HashMap<String, String>>>,
+    /// Current notification/activity states keyed by source.
+    pub notification_current: Arc<RwLock<HashMap<String, NotificationEventInfo>>>,
+    /// Recent notification history shared across connected clients.
+    pub notification_history: Arc<RwLock<Vec<NotificationEventInfo>>>,
 }
 
 /// Session state for persistence (simplified - no PTY state)
@@ -521,6 +525,8 @@ impl AppState {
             session_path,
             last_write_time: Arc::new(RwLock::new(HashMap::new())),
             preview_sessions: Arc::new(RwLock::new(HashMap::new())),
+            notification_current: Arc::new(RwLock::new(HashMap::new())),
+            notification_history: Arc::new(RwLock::new(Vec::new())),
         };
 
         // Spawn debounce flush background task
@@ -812,6 +818,45 @@ impl AppState {
             result.push((pane_id.clone(), buffer));
         }
         result
+    }
+
+    pub async fn apply_notification_update(&self, notification: NotificationEventInfo) {
+        let key = format!("{}:{}", notification.source_type, notification.source_id);
+
+        if notification.status == "idle" {
+            self.notification_current.write().await.remove(&key);
+            return;
+        }
+
+        self.notification_current
+            .write()
+            .await
+            .insert(key, notification.clone());
+
+        if matches!(notification.status.as_str(), "needs_input" | "done" | "crashed") {
+            let mut history = self.notification_history.write().await;
+            if !history.iter().any(|item| item.event_id == notification.event_id) {
+                history.insert(0, notification);
+                history.truncate(50);
+            }
+        }
+    }
+
+    pub async fn clear_notification_history(&self) {
+        self.notification_history.write().await.clear();
+    }
+
+    pub async fn notification_snapshot(&self) -> NotificationSnapshot {
+        let current = self
+            .notification_current
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect();
+        let history = self.notification_history.read().await.clone();
+
+        NotificationSnapshot { current, history }
     }
 
     /// Moves a pane to floating tabs.

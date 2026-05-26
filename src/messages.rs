@@ -5,6 +5,23 @@
 use serde::{Deserialize, Serialize};
 use crate::state::{ConnectedDevice, Pane, PaneGroup};
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NotificationEventInfo {
+    pub event_id: String,
+    pub source_type: String,
+    pub source_id: String,
+    pub name: String,
+    pub status: String,
+    pub detail: Option<String>,
+    pub timestamp: u64,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct NotificationSnapshot {
+    pub current: Vec<NotificationEventInfo>,
+    pub history: Vec<NotificationEventInfo>,
+}
+
 /// Client to server messages.
 #[derive(Deserialize, Debug)]
 #[serde(tag = "action")]
@@ -171,6 +188,14 @@ pub enum ClientMessage {
         whiteboard_data: Option<String>,
         image_data: Option<String>,
     },
+
+    /// Broadcast a notification/activity state update to every client.
+    #[serde(rename = "notification_update")]
+    NotificationUpdate { notification: NotificationEventInfo },
+
+    /// Clear notification history on every connected client.
+    #[serde(rename = "clear_notification_history")]
+    ClearNotificationHistory,
 }
 
 /// Server to client messages.
@@ -323,6 +348,7 @@ pub enum ServerMessage {
         floating_panes: Vec<String>,
         groups: Vec<PaneGroupInfo>,
         scrollback_buffers: std::collections::HashMap<String, String>,
+        notifications: NotificationSnapshot,
     },
 
     /// A pane's content was updated (notes, whiteboard, image).
@@ -333,6 +359,14 @@ pub enum ServerMessage {
         whiteboard_data: Option<String>,
         image_data: Option<String>,
     },
+
+    /// Notification/activity update from another client.
+    #[serde(rename = "notification_update")]
+    NotificationUpdate { notification: NotificationEventInfo },
+
+    /// Notification history was cleared by a client.
+    #[serde(rename = "notification_history_cleared")]
+    NotificationHistoryCleared,
 }
 
 /// A git repository info.

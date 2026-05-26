@@ -170,7 +170,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, client_addr: Soc
                         let groups = state.get_all_groups().await;
                         let scrollback_buffers = state.get_panes_buffers(&active_panes.iter().chain(floating_panes.iter()).cloned().collect::<Vec<_>>()).await
                             .into_iter().map(|(id, buf)| (id, String::from_utf8_lossy(&buf).to_string())).collect();
-                        let _ = tx.send(ServerMessage::FullStateSync { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone(), groups, scrollback_buffers }).await;
+                        let notifications = state.notification_snapshot().await;
+                        let _ = tx.send(ServerMessage::FullStateSync { panes, active_panes: active_panes.clone(), floating_panes: floating_panes.clone(), groups, scrollback_buffers, notifications }).await;
                     } else {
                         warn!("Invalid auth token attempted");
                         let _ = tx.send(ServerMessage::AuthResult {
@@ -1692,6 +1693,16 @@ async fn handle_client_message(
             });
             // Persist session state
             state.save_session().await;
+        }
+
+        ClientMessage::NotificationUpdate { notification } => {
+            state.apply_notification_update(notification.clone()).await;
+            let _ = state.broadcast_tx.send(ServerMessage::NotificationUpdate { notification });
+        }
+
+        ClientMessage::ClearNotificationHistory => {
+            state.clear_notification_history().await;
+            let _ = state.broadcast_tx.send(ServerMessage::NotificationHistoryCleared);
         }
     }
 
