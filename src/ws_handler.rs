@@ -1719,6 +1719,7 @@ pub fn create_router(state: Arc<AppState>, frontend_dir: Option<PathBuf>) -> Rou
         .route("/preview/:pane_id/*path", get(preview_handler))
         .route("/preview/:pane_id", get(preview_handler))
         .route("/preview-register", post(preview_register_handler))
+        .route("/proxy", get(proxy_query_handler))
         .route("/proxy/*target", get(proxy_handler))
         .with_state(state);
 
@@ -1789,22 +1790,24 @@ pub async fn launch_handler(State(state): State<Arc<AppState>>) -> Response {
 ///    Example: /proxy?url=http%3A%2F%2Flocalhost%3A3001%2F
 ///    This format is preferred because it avoids Next.js route conflicts.
 ///
+pub async fn proxy_query_handler(uri: axum::http::Uri) -> Response {
+    use axum::http::{header, StatusCode};
+
+    match proxy_query_target(&uri) {
+        Some(target_url) => handle_proxy_url(&target_url).await,
+        None => (StatusCode::BAD_REQUEST, [(header::CONTENT_TYPE, "text/plain")], "Invalid proxy target format. Use /proxy/http/host:port/path or /proxy?url=<encoded>").into_response(),
+    }
+}
+
 pub async fn proxy_handler(
     axum::extract::Path(target): axum::extract::Path<String>,
     uri: axum::http::Uri,
 ) -> Response {
-    use axum::http::{header, StatusCode, header::HeaderValue};
+    use axum::http::{header, StatusCode};
 
     // Try query param format first: /proxy?url=http%3A%2F%2Flocalhost%3A3001%2F
-    if let Some(query) = uri.query() {
-        if query.starts_with("url=") {
-            let encoded_url = &query[4..]; // strip "url="
-            if let Ok(target_url) = urlencoding::decode(encoded_url) {
-                // For query param format, construct proxy prefix from the target URL
-                let proxy_prefix = format!("/proxy?url={}", encoded_url);
-                return handle_proxy_url(target_url.as_ref(), proxy_prefix).await;
-            }
-        }
+    if let Some(target_url) = proxy_query_target(&uri) {
+        return handle_proxy_url(&target_url).await;
     }
 
     // Path format fallback: /proxy/http/localhost:3000/_next/static/abc.js
@@ -1820,42 +1823,34 @@ pub async fn proxy_handler(
         None => (rest, ""),
     };
     let url = format!("{}://{}{}", scheme, host_port, path);
-    let proxy_prefix = format!("/proxy/{}/{}", scheme, host_port);
-    handle_proxy_url(&url, proxy_prefix).await
+    handle_proxy_url(&url).await
+}
+
+fn proxy_query_target(uri: &axum::http::Uri) -> Option<String> {
+    let query = uri.query()?;
+
+    url::form_urlencoded::parse(query.as_bytes())
+        .find_map(|(key, value)| (key == "url").then(|| value.into_owned()))
 }
 
 /// Shared proxy logic for both path and query param formats.
-async fn handle_proxy_url(target_url: &str, proxy_prefix: String) -> Response {
+async fn handle_proxy_url(target_url: &str) -> Response {
     use axum::http::{header, StatusCode, header::HeaderValue};
 
     info!("[PROXY] request target_url={}", target_url);
-    info!("[PROXY] proxy_prefix={}", proxy_prefix);
 
-    // Validate host - only allow localhost and local IPs
-    if let Ok(parsed_url) = Url::parse(target_url) {
-        let host_only = parsed_url.host_str().unwrap_or("");
-        let is_localhost = host_only == "localhost" || host_only == "127.0.0.1" || host_only == "::1"
-            || host_only.starts_with("192.168.")
-            || host_only.starts_with("10.")
-            || (host_only.starts_with("172.") && {
-                if let Some(dot2) = host_only.strip_prefix("172.") {
-                    if let Some(dot3) = dot2.find('.') {
-                        let third: u32 = dot2[..dot3].parse().unwrap_or(0);
-                        third >= 16 && third <= 31
-                    } else { false }
-                } else { false }
-            })
-            || host_only.ends_with(".local");
-
-        if !is_localhost {
-            warn!("Proxy blocked request to non-local host: {}", host_only);
-            return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], "Only local URLs allowed").into_response();
+    let parsed_url = match Url::parse(target_url) {
+        Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() => url,
+        _ => {
+            warn!("Proxy blocked invalid target URL: {}", target_url);
+            return (StatusCode::BAD_REQUEST, [(header::CONTENT_TYPE, "text/plain")], "Invalid proxy URL").into_response();
         }
-    }
+    };
 
     // Make the proxied request
-    match reqwest::get(target_url).await {
+    match reqwest::get(parsed_url).await {
         Ok(resp) => {
+            let final_url = resp.url().clone();
             let status = resp.status();
             let upstream_headers = resp.headers().clone();
             let body = resp.bytes().await;
@@ -1869,13 +1864,9 @@ async fn handle_proxy_url(target_url: &str, proxy_prefix: String) -> Response {
 
                     // For HTML responses: rewrite root-relative URLs AND inject <base> tag
                     // Also inject fetch/XHR patch script for client-side requests
-                    let target_host = Url::parse(target_url)
-                        .ok()
-                        .and_then(|u| u.host_str().map(|h| h.to_string()))
-                        .unwrap_or_else(|| "localhost".to_string());
-                    let target_base = format!("{}://{}", if target_url.starts_with("https") { "https" } else { "http" }, target_host);
+                    let target_base = url_origin(&final_url);
                     let final_body = if is_html {
-                        rewrite_html_urls(body_bytes.as_ref(), &proxy_prefix, &target_base)
+                        rewrite_html_urls(body_bytes.as_ref(), &target_base)
                     } else {
                         body_bytes.to_vec()
                     };
@@ -1886,7 +1877,7 @@ async fn handle_proxy_url(target_url: &str, proxy_prefix: String) -> Response {
                             .unwrap_or(HeaderValue::from_static("application/octet-stream"))),
                         (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
                         (header::HeaderName::from_static("x-termote-proxy"), HeaderValue::from_static("1")),
-                        (header::HeaderName::from_static("x-termote-proxy-target"), HeaderValue::from_str(target_url).unwrap_or(HeaderValue::from_static(""))),
+                        (header::HeaderName::from_static("x-termote-proxy-target"), HeaderValue::from_str(final_url.as_str()).unwrap_or(HeaderValue::from_static(""))),
                     ];
 
                     // Forward safe headers from upstream
@@ -1943,7 +1934,7 @@ async fn handle_proxy_url(target_url: &str, proxy_prefix: String) -> Response {
 
 /// Rewrite root-relative URLs in HTML so they go through the proxy.
 /// Browser ignores <base> for paths starting with /, so we must prefix them.
-fn rewrite_html_urls(content: &[u8], proxy_prefix: &str, target_base: &str) -> Vec<u8> {
+fn rewrite_html_urls(content: &[u8], target_base: &str) -> Vec<u8> {
     let html = String::from_utf8_lossy(content);
 
     // Inject proxy injection script before </head>
@@ -2017,7 +2008,7 @@ fn rewrite_html_urls(content: &[u8], proxy_prefix: &str, target_base: &str) -> V
     });
     let after_href = HREF_RE.replace_all(&with_base, |caps: &regex::Captures| {
         let path = &caps[1];
-        let proxied = format!("{}/proxy?url={}{}", proxy_prefix.trim_end_matches('/'), target_base.trim_end_matches('/'), path);
+        let proxied = proxied_url(target_base, path);
         format!(r#"href="{proxied}""#)
     });
 
@@ -2027,7 +2018,7 @@ fn rewrite_html_urls(content: &[u8], proxy_prefix: &str, target_base: &str) -> V
     });
     let after_src = SRC_RE.replace_all(&after_href, |caps: &regex::Captures| {
         let path = &caps[1];
-        let proxied = format!("{}/proxy?url={}{}", proxy_prefix.trim_end_matches('/'), target_base.trim_end_matches('/'), path);
+        let proxied = proxied_url(target_base, path);
         format!(r#"src="{proxied}""#)
     });
 
@@ -2037,7 +2028,7 @@ fn rewrite_html_urls(content: &[u8], proxy_prefix: &str, target_base: &str) -> V
     });
     let after_action = ACTION_RE.replace_all(&after_src, |caps: &regex::Captures| {
         let path = &caps[1];
-        let proxied = format!("{}/proxy?url={}{}", proxy_prefix.trim_end_matches('/'), target_base.trim_end_matches('/'), path);
+        let proxied = proxied_url(target_base, path);
         format!(r#"action="{proxied}""#)
     });
 
@@ -2050,10 +2041,10 @@ fn rewrite_html_urls(content: &[u8], proxy_prefix: &str, target_base: &str) -> V
         let rewritten: String = srcset.split(',').map(|part| {
             let trimmed = part.trim();
             if let Some((url, desc)) = trimmed.split_once(' ') {
-                let proxied = format!("{}/proxy?url={}{}", proxy_prefix.trim_end_matches('/'), target_base.trim_end_matches('/'), url);
+                let proxied = proxied_url(target_base, url);
                 format!("{} {}", proxied, desc.trim())
             } else {
-                let proxied = format!("{}/proxy?url={}{}", proxy_prefix.trim_end_matches('/'), target_base.trim_end_matches('/'), trimmed);
+                let proxied = proxied_url(target_base, trimmed);
                 proxied
             }
         }).collect::<Vec<_>>().join(", ");
@@ -2066,12 +2057,42 @@ fn rewrite_html_urls(content: &[u8], proxy_prefix: &str, target_base: &str) -> V
     });
     let result = POSTER_RE.replace_all(&after_srcset, |caps: &regex::Captures| {
         let path = &caps[1];
-        let proxied = format!("{}/proxy?url={}{}", proxy_prefix.trim_end_matches('/'), target_base.trim_end_matches('/'), path);
+        let proxied = proxied_url(target_base, path);
         format!(r#"poster="{proxied}""#)
     });
 
     result.to_string().into_bytes()
 }
+
+fn url_origin(url: &Url) -> String {
+    let mut origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or("localhost"));
+    if let Some(port) = url.port() {
+        origin.push_str(&format!(":{}", port));
+    }
+    origin
+}
+
+fn proxied_url(target_base: &str, value: &str) -> String {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() || trimmed.starts_with('#') || NON_PROXY_SCHEME_RE.is_match(trimmed) {
+        return value.to_string();
+    }
+
+    let absolute = Url::parse(trimmed)
+        .or_else(|_| Url::parse(target_base).and_then(|base| base.join(trimmed)));
+
+    match absolute {
+        Ok(url) if matches!(url.scheme(), "http" | "https") => {
+            format!("/proxy?url={}", urlencoding::encode(url.as_str()))
+        }
+        _ => value.to_string(),
+    }
+}
+
+static NON_PROXY_SCHEME_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"(?i)^(data:|blob:|mailto:|tel:|javascript:)").unwrap()
+});
 
 /// Preview proxy handler - serves content from a registered preview session.
 /// Path: /preview/:pane_id/*path
@@ -2198,7 +2219,7 @@ pub async fn preview_handler(
 
 /// Register a preview session for a browser pane.
 #[derive(serde::Deserialize)]
-struct PreviewRegisterRequest {
+pub struct PreviewRegisterRequest {
     pane_id: String,
     target_url: String,
 }
@@ -2207,7 +2228,7 @@ pub async fn preview_register_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(req): axum::extract::Json<PreviewRegisterRequest>,
 ) -> Response {
-    use axum::http::{header, StatusCode, header::HeaderValue};
+    use axum::http::{header, StatusCode};
 
     info!("[PREVIEW] Register: pane_id={} target_url={}", req.pane_id, req.target_url);
 
