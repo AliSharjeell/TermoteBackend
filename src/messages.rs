@@ -54,6 +54,24 @@ pub enum ClientMessage {
         image_data: Option<String>,
     },
 
+    /// Update a browser pane's URL without creating a new pane.
+    #[serde(rename = "update_browser_url")]
+    UpdateBrowserUrl {
+        pane_id: String,
+        url: String,
+        name: Option<String>,
+    },
+
+    /// Relay WebRTC signaling for browser mirror sessions.
+    #[serde(rename = "browser_mirror_signal")]
+    BrowserMirrorSignal {
+        pane_id: String,
+        from_peer_id: String,
+        to_peer_id: Option<String>,
+        kind: String,
+        data: serde_json::Value,
+    },
+
     /// Send input data to a specific pane.
     #[serde(rename = "input")]
     Input { pane_id: String, data: String },
@@ -367,6 +385,16 @@ pub enum ServerMessage {
     /// Notification history was cleared by a client.
     #[serde(rename = "notification_history_cleared")]
     NotificationHistoryCleared,
+
+    /// WebRTC signaling relay for browser mirror sessions.
+    #[serde(rename = "browser_mirror_signal")]
+    BrowserMirrorSignal {
+        pane_id: String,
+        from_peer_id: String,
+        to_peer_id: Option<String>,
+        kind: String,
+        data: serde_json::Value,
+    },
 }
 
 /// A git repository info.

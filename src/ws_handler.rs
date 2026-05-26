@@ -1032,9 +1032,15 @@ async fn handle_client_message(
 
             let pane_id = pane.id.clone();
             if state.get_pane(&pane_id).await.is_some() {
-                state
-                    .update_pane_content(&pane_id, note_content, whiteboard_data, image_data)
-                    .await;
+                if pane_type == "browser" {
+                    if let Some(url) = url.filter(|value| !value.trim().is_empty()) {
+                        state.update_browser_url(&pane_id, url, Some(pane_name)).await;
+                    }
+                } else {
+                    state
+                        .update_pane_content(&pane_id, note_content, whiteboard_data, image_data)
+                        .await;
+                }
                 broadcast_state_update(state).await;
                 state.save_session().await;
                 return Ok(());
@@ -1049,6 +1055,35 @@ async fn handle_client_message(
             broadcast_state_update(state).await;
             state.save_session().await;
             info!("Created shared {} pane {}", pane_type, pane_id);
+        }
+
+        ClientMessage::UpdateBrowserUrl { pane_id, url, name } => {
+            info!("Update browser pane {} URL: {}", pane_id, url);
+            if state.update_browser_url(&pane_id, url, name).await {
+                broadcast_state_update(state).await;
+                state.save_session().await;
+            } else {
+                warn!("Rejected browser URL update for missing/non-browser pane: {}", pane_id);
+                let _ = state.broadcast_tx.send(ServerMessage::Error {
+                    message: "Browser pane not found".to_string(),
+                });
+            }
+        }
+
+        ClientMessage::BrowserMirrorSignal {
+            pane_id,
+            from_peer_id,
+            to_peer_id,
+            kind,
+            data,
+        } => {
+            let _ = state.broadcast_tx.send(ServerMessage::BrowserMirrorSignal {
+                pane_id,
+                from_peer_id,
+                to_peer_id,
+                kind,
+                data,
+            });
         }
 
         ClientMessage::RequestDirectoryPicker { shell } => {

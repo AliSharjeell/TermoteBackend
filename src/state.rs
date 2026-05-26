@@ -780,6 +780,39 @@ impl AppState {
         last_write.insert(pane_id.to_string(), now);
     }
 
+    /// Updates a browser pane's URL and optional display name.
+    pub async fn update_browser_url(
+        &self,
+        pane_id: &str,
+        url: String,
+        name: Option<String>,
+    ) -> bool {
+        let mut updated = false;
+        {
+            let mut panes = self.panes.write().await;
+            if let Some(pane) = panes.get_mut(pane_id) {
+                if pane.pane_type == "browser" {
+                    pane.url = Some(url);
+                    if let Some(name) = name.filter(|value| !value.trim().is_empty()) {
+                        pane.name = name;
+                    }
+                    updated = true;
+                }
+            }
+        }
+
+        if updated {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let mut last_write = self.last_write_time.write().await;
+            last_write.insert(pane_id.to_string(), now);
+        }
+
+        updated
+    }
+
     /// Gets active pane IDs.
     pub async fn get_active_panes(&self) -> Vec<String> {
         let active = self.active_panes.read().await;
