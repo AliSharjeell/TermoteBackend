@@ -2154,6 +2154,13 @@ async fn handle_preview_request(
     // Make the proxied request
     match reqwest::get(&target_url).await {
         Ok(resp) => {
+            let final_url = resp.url().clone();
+            let final_origin = url_origin(&final_url);
+            if path.is_empty() && final_origin != target_origin {
+                let mut sessions = state.preview_sessions.write().await;
+                sessions.insert(pane_id.clone(), final_origin.clone());
+            }
+
             let status = resp.status();
             let upstream_headers = resp.headers().clone();
             let body = resp.bytes().await;
@@ -2171,11 +2178,11 @@ async fn handle_preview_request(
 
                     // Rewrite content based on type
                     let final_body = if is_html {
-                        rewrite_html_for_preview(body_bytes.as_ref(), &preview_base, &target_origin)
+                        rewrite_html_for_preview(body_bytes.as_ref(), &preview_base, final_url.as_str())
                     } else if is_js {
                         rewrite_js_for_preview(body_bytes.as_ref(), &preview_base)
                     } else if is_css {
-                        rewrite_css_for_preview(body_bytes.as_ref(), &preview_base)
+                        rewrite_css_for_preview(body_bytes.as_ref(), &preview_base, final_url.as_str())
                     } else {
                         body_bytes.to_vec()
                     };
@@ -2187,7 +2194,7 @@ async fn handle_preview_request(
                         (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
                         (header::HeaderName::from_static("x-termote-preview"), HeaderValue::from_static("1")),
                         (header::HeaderName::from_static("x-termote-preview-pane"), HeaderValue::from_str(&pane_id).unwrap_or(HeaderValue::from_static(""))),
-                        (header::HeaderName::from_static("x-termote-preview-target"), HeaderValue::from_str(&target_origin).unwrap_or(HeaderValue::from_static(""))),
+                        (header::HeaderName::from_static("x-termote-preview-target"), HeaderValue::from_str(final_url.as_str()).unwrap_or(HeaderValue::from_static(""))),
                     ];
 
                     // Forward safe headers
@@ -2290,8 +2297,11 @@ pub async fn preview_register_handler(
 }
 
 /// Rewrite HTML content for preview prefix.
-fn rewrite_html_for_preview(content: &[u8], preview_base: &str, target_origin: &str) -> Vec<u8> {
+fn rewrite_html_for_preview(content: &[u8], preview_base: &str, target_base: &str) -> Vec<u8> {
     let html = String::from_utf8_lossy(content);
+    let target_origin = Url::parse(target_base)
+        .map(|url| url_origin(&url))
+        .unwrap_or_else(|_| target_base.to_string());
 
     // Inject fetch/XHR patch script using preview prefix
     let proxy_script = format!(
@@ -2299,30 +2309,19 @@ fn rewrite_html_for_preview(content: &[u8], preview_base: &str, target_origin: &
 (function() {{
   const PREVIEW_BASE = "{preview_base}";
   const TARGET_ORIGIN = "{target_origin}";
+  const TARGET_BASE = "{target_base}";
 
   function proxifyUrl(input) {{
     try {{
       if (!input) return input;
       if (/^(data:|blob:|mailto:|tel:|javascript:)/i.test(input)) return input;
 
-      // Handle absolute URLs - only proxy if same-origin
-      if (/^https?:\/\//i.test(input)) {{
-        try {{
-          const url = new URL(input);
-          if (url.origin === TARGET_ORIGIN) {{
-            return PREVIEW_BASE.replace(/\/$/, "") + url.pathname + url.search;
-          }}
-          return input;
-        }} catch {{ return input; }}
+      const url = new URL(input, TARGET_BASE);
+      if (url.origin === TARGET_ORIGIN) {{
+        return PREVIEW_BASE.replace(/\/$/, "") + url.pathname + url.search + url.hash;
       }}
 
-      // Root-relative: add preview prefix
-      if (input.startsWith("/")) {{
-        return PREVIEW_BASE.replace(/\/$/, "") + input;
-      }}
-
-      // Relative: resolve against target
-      return new URL(input, TARGET_ORIGIN + "/").href;
+      return input;
     }} catch {{
       return input;
     }}
@@ -2376,26 +2375,7 @@ fn rewrite_html_for_preview(content: &[u8], preview_base: &str, target_origin: &
             .replace_all(text, |caps: &regex::Captures| {
                 let attr = &caps[1];
                 let value = &caps[2];
-                let proxied = if value.starts_with("/") {
-                    format!("{}{}", preview_base.trim_end_matches('/'), value)
-                } else if value.starts_with("http://") || value.starts_with("https://") {
-                    // Only proxy if same origin
-                    if let Ok(url) = Url::parse(value) {
-                        if let (Some(value_host), Some(origin_host)) = (url.host_str(), Url::parse(target_origin).ok().and_then(|u| u.host_str().map(|h| h.to_string()))) {
-                            if value_host == origin_host {
-                                format!("{}{}", preview_base.trim_end_matches('/'), url.path())
-                            } else {
-                                value.to_string()
-                            }
-                        } else {
-                            value.to_string()
-                        }
-                    } else {
-                        value.to_string()
-                    }
-                } else {
-                    value.to_string()
-                };
+                let proxied = rewrite_preview_url(preview_base, target_base, value);
                 format!(r#"{}{}"#, attr, proxied)
             });
         rewritten.to_string()
@@ -2418,11 +2398,7 @@ fn rewrite_html_for_preview(content: &[u8], preview_base: &str, target_origin: &
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             let url = parts[0];
             let desc = if parts.len() > 1 { parts[1..].join(" ") } else { String::new() };
-            let proxied = if url.starts_with("/") {
-                format!("{}{}", preview_base.trim_end_matches('/'), url)
-            } else {
-                url.to_string()
-            };
+            let proxied = rewrite_preview_url(preview_base, target_base, url);
             if desc.is_empty() {
                 proxied
             } else {
@@ -2433,6 +2409,47 @@ fn rewrite_html_for_preview(content: &[u8], preview_base: &str, target_origin: &
     }).to_string();
 
     result.into_bytes()
+}
+
+fn rewrite_preview_url(preview_base: &str, target_base: &str, value: &str) -> String {
+    let trimmed = value.trim();
+    let preview_root = preview_base.trim_end_matches('/');
+
+    if trimmed.is_empty()
+        || trimmed.starts_with('#')
+        || trimmed.starts_with("//")
+        || trimmed == preview_root
+        || trimmed.starts_with(&format!("{}/", preview_root))
+        || NON_PROXY_SCHEME_RE.is_match(trimmed)
+    {
+        return value.to_string();
+    }
+
+    let base = match Url::parse(target_base) {
+        Ok(url) => url,
+        Err(_) => return value.to_string(),
+    };
+
+    let absolute = Url::parse(trimmed).or_else(|_| base.join(trimmed));
+    let url = match absolute {
+        Ok(url) if matches!(url.scheme(), "http" | "https") => url,
+        _ => return value.to_string(),
+    };
+
+    if url_origin(&url) != url_origin(&base) {
+        return value.to_string();
+    }
+
+    let mut proxied = format!("{}{}", preview_base.trim_end_matches('/'), url.path());
+    if let Some(query) = url.query() {
+        proxied.push('?');
+        proxied.push_str(query);
+    }
+    if let Some(fragment) = url.fragment() {
+        proxied.push('#');
+        proxied.push_str(fragment);
+    }
+    proxied
 }
 
 /// Rewrite JavaScript content for preview prefix.
@@ -2455,21 +2472,25 @@ fn rewrite_js_for_preview(content: &[u8], preview_base: &str) -> Vec<u8> {
 }
 
 /// Rewrite CSS content for preview prefix.
-fn rewrite_css_for_preview(content: &[u8], preview_base: &str) -> Vec<u8> {
+fn rewrite_css_for_preview(content: &[u8], preview_base: &str, target_base: &str) -> Vec<u8> {
     let css = String::from_utf8_lossy(content);
 
     // Rewrite url(...) references
-    let rewritten = Regex::new(r#"url\(([^)]+)\)""#)
+    let rewritten = Regex::new(r#"url\(([^)]+)\)"#)
         .unwrap()
         .replace_all(&css, |caps: &regex::Captures| {
             let url = &caps[1];
-            let url_trimmed = url.trim_matches('"').trim_matches('\'');
-            let proxied = if url_trimmed.starts_with("/") {
-                format!("url({}{})", preview_base.trim_end_matches('/'), url_trimmed)
+            let trimmed = url.trim();
+            let quote = if trimmed.starts_with('"') {
+                "\""
+            } else if trimmed.starts_with('\'') {
+                "'"
             } else {
-                format!("url({})", url)
+                ""
             };
-            proxied
+            let url_trimmed = trimmed.trim_matches('"').trim_matches('\'');
+            let proxied = rewrite_preview_url(preview_base, target_base, url_trimmed);
+            format!("url({quote}{proxied}{quote})")
         })
         .to_string();
 
