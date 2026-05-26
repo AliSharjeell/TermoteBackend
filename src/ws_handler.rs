@@ -1717,7 +1717,8 @@ pub fn create_router(state: Arc<AppState>, frontend_dir: Option<PathBuf>) -> Rou
         .route("/tunnel-check", get(tunnel_check_handler))
         .route("/launch", get(launch_handler))
         .route("/preview/:pane_id/*path", get(preview_handler))
-        .route("/preview/:pane_id", get(preview_handler))
+        .route("/preview/:pane_id/", get(preview_root_handler))
+        .route("/preview/:pane_id", get(preview_root_handler))
         .route("/preview-register", post(preview_register_handler))
         .route("/proxy", get(proxy_query_handler))
         .route("/proxy/*target", get(proxy_handler))
@@ -2101,6 +2102,23 @@ pub async fn preview_handler(
     axum::extract::Path((pane_id, path)): axum::extract::Path<(String, String)>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    handle_preview_request(pane_id, path, params, state).await
+}
+
+pub async fn preview_root_handler(
+    axum::extract::Path(pane_id): axum::extract::Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    handle_preview_request(pane_id, String::new(), params, state).await
+}
+
+async fn handle_preview_request(
+    pane_id: String,
+    path: String,
+    params: std::collections::HashMap<String, String>,
+    state: Arc<AppState>,
 ) -> Response {
     use axum::http::{header, StatusCode, header::HeaderValue};
 
